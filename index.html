@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WK 2026 Voorspellingen - Opta Analyst & Polymarket</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-green: #10b981;
+            --accent-yellow: #f59e0b;
+            --accent-blue: #06b6d4;
+            --accent-red: #ef4444;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(6, 182, 212, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.15) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-primary);
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            margin-top: 10px;
+            max-width: 600px;
+            width: 100%;
+            animation: fadeInDown 0.8s ease-out;
+        }
+        
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -0.05em;
+            background: linear-gradient(135deg, #06b6d4, #10b981);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+        
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+        
+        .last-updated {
+            display: inline-block;
+            margin-top: 8px;
+            font-size: 0.8rem;
+            color: var(--accent-blue);
+            background: rgba(6, 182, 212, 0.1);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        
+        .container {
+            max-width: 600px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            animation: fadeInUp 0.8s ease-out;
+        }
+        
+        .match-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .match-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        .match-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: transparent;
+            transition: background 0.3s;
+        }
+        
+        .match-card.is-motd::before {
+            background: linear-gradient(90deg, var(--accent-yellow), transparent);
+        }
+        
+        .match-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+        
+        .motd-badge {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-yellow);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        
+        .match-teams {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        
+        .team {
+            font-size: 1.15rem;
+            font-weight: 600;
+            width: 40%;
+        }
+        
+        .team.home {
+            text-align: right;
+        }
+        
+        .team.away {
+            text-align: left;
+        }
+        
+        .vs-text {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        
+        .match-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 14px;
+        }
+        
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .detail-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .detail-value {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        
+        .prediction-box {
+            grid-column: span 2;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 12px;
+            padding: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .match-card.is-motd .prediction-box {
+            background: rgba(245, 158, 11, 0.07);
+            border-color: rgba(245, 158, 11, 0.15);
+        }
+        
+        .pred-score {
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: var(--accent-green);
+        }
+        
+        .match-card.is-motd .pred-score {
+            color: var(--accent-yellow);
+        }
+        
+        .scorer-tips {
+            grid-column: span 2;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 10px;
+            padding: 10px;
+            font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .scorer-row {
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .scorer-team {
+            color: var(--text-secondary);
+        }
+        
+        .scorer-name {
+            font-weight: 600;
+            color: var(--accent-yellow);
+        }
+        
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 12px;
+            }
+            h1 {
+                font-size: 1.8rem;
+            }
+            .team {
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🏆 WK 2026 Voorspeller</h1>
+        <div class="subtitle">Wiskundig optimale uitslagen berekend op basis van live winstkansen van Polymarket en Opta Analyst data.</div>
+        <div class="last-updated">Geüpdatet: 14-06-2026 14:41 CEST</div>
+    </header>
+    
+    <div class="container">
+
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-14 17:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Germany</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Curaçao</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">94% / 4% / 2%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">3.22 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card is-motd">
+            <div class="match-header">
+                <span>📅 2026-06-14 20:00</span>
+                <span class="motd-badge">Wedstrijd van de Dag</span>
+            </div>
+            <div class="match-teams">
+                <span class="team home">Netherlands</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Japan</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">48% / 28% / 26%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">1.67 - 0.80</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">0-0</span>
+                </div>
+        
+                <div class="scorer-tips">
+                    <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
+                    <div class="scorer-row">
+                        <span class="scorer-team">Netherlands:</span>
+                        <span class="scorer-name">Geen score</span>
+                    </div>
+                    <div class="scorer-row">
+                        <span class="scorer-team">Japan:</span>
+                        <span class="scorer-name">Geen score</span>
+                    </div>
+                </div>
+            
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-14 23:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Côte d'Ivoire</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Ecuador</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">30% / 34% / 38%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">1.05 - 1.38</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">1-1</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-15 02:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Sweden</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Tunisia</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">50% / 28% / 22%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">1.81 - 0.65</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">1-1</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-15 16:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Spain</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Cabo Verde</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">90% / 7% / 3%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">3.10 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card is-motd">
+            <div class="match-header">
+                <span>📅 2026-06-15 19:00</span>
+                <span class="motd-badge">Wedstrijd van de Dag</span>
+            </div>
+            <div class="match-teams">
+                <span class="team home">Belgium</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Egypt</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">60% / 24% / 16%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.15 - 0.33</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+                <div class="scorer-tips">
+                    <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
+                    <div class="scorer-row">
+                        <span class="scorer-team">Belgium:</span>
+                        <span class="scorer-name">Spits (of penaltynemer)</span>
+                    </div>
+                    <div class="scorer-row">
+                        <span class="scorer-team">Egypt:</span>
+                        <span class="scorer-name">Geen score</span>
+                    </div>
+                </div>
+            
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-15 22:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Saudi Arabia</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Uruguay</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">12% / 22% / 66%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">0.30 - 2.41</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">0-2</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-16 01:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">IR Iran</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">New Zealand</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">52% / 28% / 20%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">1.91 - 0.55</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">1-1</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-16 19:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">France</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Senegal</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">66% / 22% / 12%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.37 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-16 22:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Iraq</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Norway</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">6% / 12% / 82%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">0.30 - 2.88</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">0-2</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-17 01:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Argentina</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Algeria</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">70% / 20% / 10%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.52 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-17 04:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Austria</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Jordan</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">72% / 18% / 10%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.55 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-17 17:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Portugal</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">DR Congo</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">76% / 16% / 8%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.69 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card is-motd">
+            <div class="match-header">
+                <span>📅 2026-06-17 20:00</span>
+                <span class="motd-badge">Wedstrijd van de Dag</span>
+            </div>
+            <div class="match-teams">
+                <span class="team home">England</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Croatia</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">56% / 26% / 18%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.03 - 0.44</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+                <div class="scorer-tips">
+                    <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
+                    <div class="scorer-row">
+                        <span class="scorer-team">England:</span>
+                        <span class="scorer-name">Spits (of penaltynemer)</span>
+                    </div>
+                    <div class="scorer-row">
+                        <span class="scorer-team">Croatia:</span>
+                        <span class="scorer-name">Geen score</span>
+                    </div>
+                </div>
+            
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-17 23:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Ghana</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Panama</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">44% / 28% / 28%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">1.57 - 0.89</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">1-1</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-18 02:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Uzbekistan</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Colombia</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">10% / 20% / 70%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">0.30 - 2.52</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">0-2</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-18 16:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Czechia</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">South Africa</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">55% / 24% / 20%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">1.96 - 0.52</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">1-1</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-18 19:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Switzerland</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Bosnia-Herzegovina</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">62% / 24% / 16%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.20 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-1</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-18 22:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Canada</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Qatar</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">76% / 16% / 8%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.70 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-19 01:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Mexico</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Korea Republic</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">50% / 28% / 22%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">1.79 - 0.66</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">1-1</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card is-motd">
+            <div class="match-header">
+                <span>📅 2026-06-19 19:00</span>
+                <span class="motd-badge">Wedstrijd van de Dag</span>
+            </div>
+            <div class="match-teams">
+                <span class="team home">United States</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Australia</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">62% / 22% / 16%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.20 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+                <div class="scorer-tips">
+                    <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
+                    <div class="scorer-row">
+                        <span class="scorer-team">United States:</span>
+                        <span class="scorer-name">Spits (of penaltynemer)</span>
+                    </div>
+                    <div class="scorer-row">
+                        <span class="scorer-team">Australia:</span>
+                        <span class="scorer-name">Geen score</span>
+                    </div>
+                </div>
+            
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-19 22:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Scotland</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Morocco</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">18% / 26% / 56%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">0.46 - 2.02</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">1-2</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-20 00:30</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Brazil</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Haiti</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">88% / 8% / 4%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">3.04 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-20 03:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Türkiye</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Paraguay</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">48% / 28% / 24%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">1.73 - 0.72</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">1-1</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card is-motd">
+            <div class="match-header">
+                <span>📅 2026-06-20 17:00</span>
+                <span class="motd-badge">Wedstrijd van de Dag</span>
+            </div>
+            <div class="match-teams">
+                <span class="team home">Netherlands</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Sweden</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">60% / 24% / 18%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.12 - 0.36</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+                <div class="scorer-tips">
+                    <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
+                    <div class="scorer-row">
+                        <span class="scorer-team">Netherlands:</span>
+                        <span class="scorer-name">Spits (of penaltynemer)</span>
+                    </div>
+                    <div class="scorer-row">
+                        <span class="scorer-team">Sweden:</span>
+                        <span class="scorer-name">Geen score</span>
+                    </div>
+                </div>
+            
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-20 20:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Germany</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Côte d'Ivoire</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">64% / 20% / 18%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.20 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-1</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-21 00:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Ecuador</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Curaçao</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">82% / 12% / 7%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.83 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-21 04:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Tunisia</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Japan</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">16% / 26% / 58%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">0.34 - 2.13</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">1-2</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-21 16:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Spain</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Saudi Arabia</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">90% / 8% / 4%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">3.05 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-21 19:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Belgium</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">IR Iran</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">70% / 20% / 12%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.46 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-21 22:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Uruguay</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Cabo Verde</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">68% / 20% / 12%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.44 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card is-motd">
+            <div class="match-header">
+                <span>📅 2026-06-22 01:00</span>
+                <span class="motd-badge">Wedstrijd van de Dag</span>
+            </div>
+            <div class="match-teams">
+                <span class="team home">New Zealand</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Egypt</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">20% / 26% / 56%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">0.48 - 1.99</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">0-2</span>
+                </div>
+        
+                <div class="scorer-tips">
+                    <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
+                    <div class="scorer-row">
+                        <span class="scorer-team">New Zealand:</span>
+                        <span class="scorer-name">Geen score</span>
+                    </div>
+                    <div class="scorer-row">
+                        <span class="scorer-team">Egypt:</span>
+                        <span class="scorer-name">Spits (of penaltynemer)</span>
+                    </div>
+                </div>
+            
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-22 17:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Argentina</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Austria</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">62% / 22% / 16%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">2.23 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-1</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-22 21:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">France</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Iraq</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">88% / 8% / 4%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">3.05 - 0.30</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">2-0</span>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-23 00:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Norway</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Senegal</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">44% / 28% / 28%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">1.57 - 0.90</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">1-1</span>
+                </div>
+        
+            </div>
+        </div>
+        
+    </div>
+    
+    <footer style="margin-top: 40px; margin-bottom: 20px; font-size: 0.8rem; color: var(--text-secondary); text-align: center;">
+        <p>Berekend met de Voetbalpoules Opta Voorspeller. Data ververst dagelijks om 17:00 CEST.</p>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,40 @@
+name: Update WK Voorspellingen
+
+on:
+  schedule:
+    # Dagelijks om 15:00 UTC = 17:00 CEST (Nederlandse zomertijd)
+    - cron: '0 15 * * *'
+  workflow_dispatch: # Hierdoor kun je de actie ook handmatig starten via Github
+
+permissions:
+  contents: write
+
+jobs:
+  update-predictions:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+
+    - name: Run voorspeller script
+      run: |
+        python opta_voorspeller.py -p -o voorspellingen.txt -w index.html
+
+    - name: Commit and push changes
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git add voorspellingen.txt index.html
+        # Alleen committen en pushen als er daadwerkelijk wijzigingen zijn
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Automatische update voorspellingen" && git push)

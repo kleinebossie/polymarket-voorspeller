@@ -26,7 +26,7 @@ Datum/Tijd        | Thuisploeg           vs. Uitploeg             | Odds (1/X/2)
 2026-06-19 01:00  | Mexico               vs. Korea Republic       | 49.5% / 28.5% / 22.5% | 1.79 - 0.66        | 1-1          |                               
 2026-06-19 19:00  | United States        vs. Australia            | 61.5% / 21.5% / 16.5% | 2.20 - 0.30        | 2-0 [MOTD]   | Thuis: Spits | Uit: Geen      
 2026-06-19 22:00  | Scotland             vs. Morocco              | 18.5% / 25.5% / 55.5% | 0.46 - 2.02        | 1-2          |                               
-2026-06-20 00:30  | Brazil               vs. Haiti                | 88.5% / 8.1% / 4.0% | 3.05 - 0.30        | 2-0          |                               
+2026-06-20 00:30  | Brazil               vs. Haiti                | 87.5% / 8.1% / 4.0% | 3.04 - 0.30        | 2-0          |                               
 2026-06-20 03:00  | Türkiye              vs. Paraguay             | 47.5% / 28.5% / 23.5% | 1.73 - 0.72        | 1-1          |                               
 2026-06-20 17:00  | Netherlands          vs. Sweden               | 59.5% / 23.5% / 17.5% | 2.12 - 0.36        | 2-0 [MOTD]   | Thuis: Spits | Uit: Geen      
 2026-06-20 20:00  | Germany              vs. Côte d'Ivoire        | 63.5% / 20.5% / 17.5% | 2.20 - 0.30        | 2-1          |                               

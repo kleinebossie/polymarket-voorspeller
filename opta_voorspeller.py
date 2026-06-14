@@ -396,6 +396,383 @@ def exporteer_naar_bestand(alle_res, bestandsnaam):
     except Exception as e:
         print(f"{RED}❌ Fout bij opslaan van bestand: {e}{RESET}\n")
 
+def exporteer_naar_html(alle_res, bestandsnaam):
+    """Genereert een prachtige, mobielvriendelijke HTML-pagina (index.html) met de voorspellingen."""
+    import datetime
+    nu_str = datetime.datetime.now().strftime("%d-%m-%Y %H:%M")
+    
+    html_content = f"""<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WK 2026 Voorspellingen - Opta Analyst & Polymarket</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-green: #10b981;
+            --accent-yellow: #f59e0b;
+            --accent-blue: #06b6d4;
+            --accent-red: #ef4444;
+        }}
+        
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        
+        body {{
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(6, 182, 212, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.15) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-primary);
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }}
+        
+        header {{
+            text-align: center;
+            margin-bottom: 30px;
+            margin-top: 10px;
+            max-width: 600px;
+            width: 100%;
+            animation: fadeInDown 0.8s ease-out;
+        }}
+        
+        h1 {{
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -0.05em;
+            background: linear-gradient(135deg, #06b6d4, #10b981);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }}
+        
+        .subtitle {{
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }}
+        
+        .last-updated {{
+            display: inline-block;
+            margin-top: 8px;
+            font-size: 0.8rem;
+            color: var(--accent-blue);
+            background: rgba(6, 182, 212, 0.1);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+        }}
+        
+        .container {{
+            max-width: 600px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            animation: fadeInUp 0.8s ease-out;
+        }}
+        
+        .match-card {{
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }}
+        
+        .match-card:hover {{
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }}
+        
+        .match-card::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: transparent;
+            transition: background 0.3s;
+        }}
+        
+        .match-card.is-motd::before {{
+            background: linear-gradient(90deg, var(--accent-yellow), transparent);
+        }}
+        
+        .match-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            font-weight: 600;
+        }}
+        
+        .motd-badge {{
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-yellow);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }}
+        
+        .match-teams {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }}
+        
+        .team {{
+            font-size: 1.15rem;
+            font-weight: 600;
+            width: 40%;
+        }}
+        
+        .team.home {{
+            text-align: right;
+        }}
+        
+        .team.away {{
+            text-align: left;
+        }}
+        
+        .vs-text {{
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-weight: 600;
+        }}
+        
+        .match-details {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 14px;
+        }}
+        
+        .detail-item {{
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }}
+        
+        .detail-label {{
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }}
+        
+        .detail-value {{
+            font-size: 0.9rem;
+            font-weight: 600;
+        }}
+        
+        .prediction-box {{
+            grid-column: span 2;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 12px;
+            padding: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        
+        .match-card.is-motd .prediction-box {{
+            background: rgba(245, 158, 11, 0.07);
+            border-color: rgba(245, 158, 11, 0.15);
+        }}
+        
+        .pred-score {{
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: var(--accent-green);
+        }}
+        
+        .match-card.is-motd .pred-score {{
+            color: var(--accent-yellow);
+        }}
+        
+        .scorer-tips {{
+            grid-column: span 2;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 10px;
+            padding: 10px;
+            font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }}
+        
+        .scorer-row {{
+            display: flex;
+            justify-content: space-between;
+        }}
+        
+        .scorer-team {{
+            color: var(--text-secondary);
+        }}
+        
+        .scorer-name {{
+            font-weight: 600;
+            color: var(--accent-yellow);
+        }}
+        
+        @keyframes fadeInDown {{
+            from {{
+                opacity: 0;
+                transform: translateY(-20px);
+            }}
+            to {{
+                opacity: 1;
+                transform: translateY(0);
+            }}
+        }}
+        
+        @keyframes fadeInUp {{
+            from {{
+                opacity: 0;
+                transform: translateY(20px);
+            }}
+            to {{
+                opacity: 1;
+                transform: translateY(0);
+            }}
+        }}
+        
+        @media (max-width: 480px) {{
+            body {{
+                padding: 12px;
+            }}
+            h1 {{
+                font-size: 1.8rem;
+            }}
+            .team {{
+                font-size: 1rem;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🏆 WK 2026 Voorspeller</h1>
+        <div class="subtitle">Wiskundig optimale uitslagen berekend op basis van live winstkansen van Polymarket en Opta Analyst data.</div>
+        <div class="last-updated">Geüpdatet: {nu_str} CEST</div>
+    </header>
+    
+    <div class="container">
+"""
+    
+    for m, res in alle_res:
+        motd_badge = '<span class="motd-badge">Wedstrijd van de Dag</span>' if m["is_motd"] else ''
+        card_class = 'is-motd' if m["is_motd"] else ''
+        datum_str = m['date'].replace('T', ' ')[:16]
+        kansen_str = f"{m['home_prob']:.0f}% / {m['draw_prob']:.0f}% / {m['away_prob']:.0f}%"
+        lam_h, lam_a = res["lambda"]
+        
+        # Build card html
+        html_content += f"""
+        <div class="match-card {card_class}">
+            <div class="match-header">
+                <span>📅 {datum_str}</span>
+                {motd_badge}
+            </div>
+            <div class="match-teams">
+                <span class="team home">{m['home']}</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">{m['away']}</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">{kansen_str}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">{lam_h:.2f} - {lam_a:.2f}</span>
+                </div>
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                    </div>
+                    <span class="pred-score">{res['uitslag']}</span>
+                </div>
+        """
+        
+        # Scorer tips if MOTD
+        if m["is_motd"]:
+            thuis_tip = "Spits (of penaltynemer)" if "spits" in res["scorer_thuis"].lower() else "Geen score"
+            uit_tip = "Spits (of penaltynemer)" if "spits" in res["scorer_uit"].lower() else "Geen score"
+            
+            html_content += f"""
+                <div class="scorer-tips">
+                    <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
+                    <div class="scorer-row">
+                        <span class="scorer-team">{m['home']}:</span>
+                        <span class="scorer-name">{thuis_tip}</span>
+                    </div>
+                    <div class="scorer-row">
+                        <span class="scorer-team">{m['away']}:</span>
+                        <span class="scorer-name">{uit_tip}</span>
+                    </div>
+                </div>
+            """
+            
+        html_content += """
+            </div>
+        </div>
+        """
+        
+    html_content += """
+    </div>
+    
+    <footer style="margin-top: 40px; margin-bottom: 20px; font-size: 0.8rem; color: var(--text-secondary); text-align: center;">
+        <p>Berekend met de Voetbalpoules Opta Voorspeller. Data ververst dagelijks om 17:00 CEST.</p>
+    </footer>
+</body>
+</html>
+"""
+
+    try:
+        with open(bestandsnaam, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        print(f"{GREEN}✓ Mobiele website succesvol gegenereerd als {BOLD}{bestandsnaam}{RESET}!\n")
+    except Exception as e:
+        print(f"{RED}❌ Fout bij genereren HTML-bestand: {e}{RESET}\n")
+
 def polymarket_modus(toon_extra=False, output_file=None):
     print_header()
     print(f"{CYAN}{BOLD}Bezig met ophalen van actieve WK-wedstrijden en odds van Polymarket...{RESET}")
@@ -509,12 +886,13 @@ def main():
     parser.add_argument("-i", "--interactive", action="store_true", help="Start de interactieve vragengids")
     parser.add_argument("-p", "--polymarket", action="store_true", help="Haal actieve WK-kansen op van Polymarket")
     parser.add_argument("-o", "--output", type=str, help="Exporteer alle Polymarket voorspellingen naar dit bestand")
+    parser.add_argument("-w", "--web", type=str, help="Genereer een prachtige HTML-pagina (index.html) naar dit bestand")
     
     args = parser.parse_args()
     
     # Als polymarket-modus is gekozen:
     if args.polymarket:
-        if args.output:
+        if args.output or args.web:
             print_header()
             print(f"{CYAN}{BOLD}Bezig met batch-verwerking van alle WK-kansen van Polymarket...{RESET}")
             matches, error = haal_polymarket_wedstrijden()
@@ -530,7 +908,10 @@ def main():
                 res = voorspel(m['home_prob'], m['draw_prob'], m['away_prob'], is_motd=m['is_motd'])
                 alle_res.append((m, res))
                 
-            exporteer_naar_bestand(alle_res, args.output)
+            if args.output:
+                exporteer_naar_bestand(alle_res, args.output)
+            if args.web:
+                exporteer_naar_html(alle_res, args.web)
             sys.exit(0)
         else:
             try:
