@@ -14,6 +14,7 @@ import argparse
 import requests
 import json
 import re
+import math
 
 # ANSI Kleurcodes voor een mooie vormgeving in de terminal (zonder extra pakketten!)
 RESET = "\033[0m"
@@ -60,6 +61,45 @@ def bereken_lambda(p_h_prime, p_a_prime):
     lambda_h = max(0.3, min(3.5, lambda_h))
     lambda_a = max(0.3, min(3.5, lambda_a))
     return lambda_h, lambda_a
+
+def bereken_xpts(lam_h, lam_a, uitslag):
+    """Berekent de verwachte punten (Expected Points/EV) via een Poisson-verdeling."""
+    if not uitslag or "-" not in uitslag:
+        return 0.0
+    try:
+        pred_h, pred_a = map(int, uitslag.split("-"))
+    except ValueError:
+        return 0.0
+        
+    ev = 0.0
+    for act_h in range(10):
+        for act_a in range(10):
+            prob = (math.pow(lam_h, act_h) * math.exp(-lam_h) / math.factorial(act_h)) * \
+                   (math.pow(lam_a, act_a) * math.exp(-lam_a) / math.factorial(act_a))
+            
+            pts = 0
+            # Toto correct
+            if (pred_h > pred_a and act_h > act_a) or (pred_h < pred_a and act_h < act_a):
+                pts += 5
+            elif pred_h == pred_a and act_h == act_a:
+                pts += 7
+                
+            # Goals correct
+            if pred_h == act_h:
+                pts += 1
+            if pred_a == act_a:
+                pts += 1
+                
+            # Doelsaldo correct (niet bij gelijkspel)
+            if (pred_h - pred_a) == (act_h - act_a) and pred_h != pred_a:
+                pts += 1
+                
+            # Exacte uitslag bonus
+            if pred_h == act_h and pred_a == act_a:
+                pts += 2
+                
+            ev += prob * pts
+    return ev
 
 def geef_uitleg_normaal(p_h_prime, p_a_prime, uitslag):
     """Geeft een eenvoudige wiskundige verklaring voor de gekozen uitslag."""
@@ -141,10 +181,13 @@ def voorspel(home_pct, draw_pct, away_pct, is_motd):
             scorer_uit = "Geen score"
         uitleg = geef_uitleg_motd(p_h_prime, p_a_prime, uitslag)
         
+    xpts = bereken_xpts(lambda_h, lambda_a, uitslag)
+        
     return {
         "genormaliseerd": (p_h_prime, p_d_prime, p_a_prime),
         "lambda": (lambda_h, lambda_a),
         "uitslag": uitslag,
+        "xpts": xpts,
         "scorer_thuis": scorer_thuis,
         "scorer_uit": scorer_uit,
         "uitleg": uitleg
@@ -726,7 +769,7 @@ def exporteer_naar_html(alle_res, bestandsnaam):
                 <div class="prediction-box">
                     <div class="detail-item">
                         <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
-                        <span class="subtitle" style="font-size: 0.75rem;">Optimale verwachte punten</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">{res.get('xpts', 0.0):.2f} pts</strong></span>
                     </div>
                     <span class="pred-score">{res['uitslag']}</span>
                 </div>
