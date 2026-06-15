@@ -414,8 +414,8 @@ def exporteer_naar_bestand(alle_res, bestandsnaam):
             f.write("======================================================================================================================================\n")
             f.write("                                                   WK VOORSPELLINGEN (OPTA & POLYMARKET)\n")
             f.write("======================================================================================================================================\n\n")
-            f.write(f"{'Datum/Tijd':<17} | {'Thuisploeg':<20} vs. {'Uitploeg':<20} | {'Odds (1/X/2)':<18} | {'Verw. Goals (xG)':<18} | {'Advies':<12} | {'Doelpuntenmaker Tips (MOTD)':<30}\n")
-            f.write("-" * 134 + "\n")
+            f.write(f"{'Datum/Tijd':<17} | {'Thuisploeg':<20} vs. {'Uitploeg':<20} | {'Odds (1/X/2)':<18} | {'xG (Thuis-Uit)':<15} | {'EV (pts)':<8} | {'Advies':<12} | {'Doelpuntenmaker Tips (MOTD)':<30}\n")
+            f.write("-" * 145 + "\n")
             for m, res in alle_res:
                 kansen_str = f"{m['home_prob']:.1f}% / {m['draw_prob']:.1f}% / {m['away_prob']:.1f}%"
                 lam_h, lam_a = res["lambda"]
@@ -433,7 +433,7 @@ def exporteer_naar_bestand(alle_res, bestandsnaam):
                     uit_tip = "Spits" if "spits" in res["scorer_uit"].lower() else "Geen"
                     scorer_str = f"Thuis: {thuis_tip} | Uit: {uit_tip}"
                     
-                f.write(f"{datum_str:<17} | {m['home']:<20} vs. {m['away']:<20} | {kansen_str:<18} | {xg_str:<18} | {advies_str:<12} | {scorer_str:<30}\n")
+                f.write(f"{datum_str:<17} | {m['home']:<20} vs. {m['away']:<20} | {kansen_str:<18} | {xg_str:<15} | {ev_val:<8.2f} | {advies_str:<12} | {scorer_str:<30}\n")
             f.write("\n======================================================================================================================================\n")
             f.write("Gegenereerd door de Voetbalpoules Opta Voorspeller CLI.\n")
             
@@ -882,11 +882,11 @@ def polymarket_modus(toon_extra=False, output_file=None):
                     alle_res.append((m, res))
                     
                 # Toon tabel
-                print(f"{CYAN}{BOLD}======================================================================================================================================{RESET}")
-                print(f"                                                    OVERZICHT ALLE VOORSPELDE WEDSTRIJDEN")
-                print(f"{CYAN}{BOLD}======================================================================================================================================{RESET}")
-                print(f"{BOLD}{'Datum/Tijd':<17} | {'Thuisploeg':<20} vs. {'Uitploeg':<20} | {'Odds (1/X/2)':<18} | {'xG (Thuis-Uit)':<15} | {'Uitslag':<12} | {'Doelpuntenmaker Tips (MOTD)':<30}{RESET}")
-                print("-" * 134)
+                print(f"{CYAN}{BOLD}================================================================================================================================================={RESET}")
+                print(f"                                                               OVERZICHT ALLE VOORSPELDE WEDSTRIJDEN")
+                print(f"{CYAN}{BOLD}================================================================================================================================================={RESET}")
+                print(f"{BOLD}{'Datum/Tijd':<17} | {'Thuisploeg':<20} vs. {'Uitploeg':<20} | {'Odds (1/X/2)':<18} | {'xG (Thuis-Uit)':<15} | {'EV (pts)':<8} | {'Uitslag':<12} | {'Doelpuntenmaker Tips (MOTD)':<30}{RESET}")
+                print("-" * 145)
                 for m, res in alle_res:
                     kansen_str = f"{m['home_prob']:.0f}% / {m['draw_prob']:.0f}% / {m['away_prob']:.0f}%"
                     lam_h, lam_a = res["lambda"]
@@ -904,7 +904,7 @@ def polymarket_modus(toon_extra=False, output_file=None):
                         uit_tip = "Spits" if "spits" in res["scorer_uit"].lower() else "Geen"
                         scorer_str = f"Thuis: {thuis_tip} | Uit: {uit_tip}"
                         
-                    print(f"{datum_str:<17} | {m['home']:<20} vs. {m['away']:<20} | {kansen_str:<18} | {xg_str:<15} | {GREEN}{BOLD}{advies_str:<12}{RESET} | {YELLOW}{scorer_str:<30}{RESET}")
+                    print(f"{datum_str:<17} | {m['home']:<20} vs. {m['away']:<20} | {kansen_str:<18} | {xg_str:<15} | {ev_val:<8.2f} | {GREEN}{BOLD}{advies_str:<12}{RESET} | {YELLOW}{scorer_str:<30}{RESET}")
                 print(f"{CYAN}{BOLD}======================================================================================================================================{RESET}\n")
                 
                 # Exporteren
