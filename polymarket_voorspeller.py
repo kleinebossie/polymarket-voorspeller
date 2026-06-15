@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 """
-Voetbalpoules Opta Voorspeller
-------------------------------
+Voetbalpoules Polymarket Voorspeller
+------------------------------------
 Deze tool berekent de wiskundig optimale uitslag voor voetbalpoules op basis van
-de Opta Analyst 1X2 winstkansen, volgens het onderzoeksrapport:
+de Polymarket 1X2 winstkansen, volgens het onderzoeksrapport:
 'Optimalisatie van Expected Points (xPts) in Voetbalpoules'.
 """
 
@@ -28,7 +28,7 @@ MAGENTA = "\033[95m"
 
 def print_header():
     print(f"\n{CYAN}{BOLD}========================================================")
-    print(f"       ⚽  VOETBALPOULES OPTA VOORSPELLER  ⚽")
+    print(f"       ⚽  VOETBALPOULES POLYMARKET VOORSPELLER  ⚽")
     print(f"========================================================{RESET}")
     print("Dit programma berekent de wiskundig beste uitslag om de")
     print("meeste punten (Expected Points) te behalen in je poule.")
@@ -426,7 +426,7 @@ def exporteer_naar_bestand(alle_res, bestandsnaam):
     try:
         with open(bestandsnaam, "w", encoding="utf-8") as f:
             f.write("======================================================================================================================================\n")
-            f.write("                                                   WK VOORSPELLINGEN (OPTA & POLYMARKET)\n")
+            f.write("                                                   WK VOORSPELLINGEN (POLYMARKET)\n")
             f.write("======================================================================================================================================\n\n")
             f.write(f"{'Datum/Tijd':<17} | {'Thuisploeg':<20} vs. {'Uitploeg':<20} | {'Odds (1/X/2)':<18} | {'xG (Thuis-Uit)':<15} | {'EV (pts)':<8} | {'Advies':<12} | {'Doelpuntenmaker Tips (MOTD)':<30}\n")
             f.write("-" * 145 + "\n")
@@ -449,7 +449,7 @@ def exporteer_naar_bestand(alle_res, bestandsnaam):
                     
                 f.write(f"{datum_str:<17} | {m['home']:<20} vs. {m['away']:<20} | {kansen_str:<18} | {xg_str:<15} | {ev_val:<8.2f} | {advies_str:<12} | {scorer_str:<30}\n")
             f.write("\n======================================================================================================================================\n")
-            f.write("Gegenereerd door de Voetbalpoules Opta Voorspeller CLI.\n")
+            f.write("Gegenereerd door de Voetbalpoules Polymarket Voorspeller CLI.\n")
             
         print(f"{GREEN}✓ Voorspellingen succesvol opgeslagen in {BOLD}{bestandsnaam}{RESET}!\n")
     except Exception as e:
@@ -467,7 +467,7 @@ def exporteer_naar_html(alle_res, bestandsnaam):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WK 2026 Voorspellingen - Opta Analyst & Polymarket</title>
+    <title>WK 2026 Voorspellingen - Polymarket</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
@@ -748,7 +748,7 @@ def exporteer_naar_html(alle_res, bestandsnaam):
 <body>
     <header>
         <h1>🏆 WK 2026 Voorspeller</h1>
-        <div class="subtitle">Wiskundig optimale uitslagen berekend op basis van live winstkansen van Polymarket en Opta Analyst data.</div>
+        <div class="subtitle">Wiskundig optimale uitslagen berekend op basis van live winstkansen van Polymarket data.</div>
         <div class="last-updated">Geüpdatet: {nu_str} CEST</div>
     </header>
     
@@ -822,7 +822,7 @@ def exporteer_naar_html(alle_res, bestandsnaam):
     </div>
     
     <footer style="margin-top: 40px; margin-bottom: 20px; font-size: 0.8rem; color: var(--text-secondary); text-align: center;">
-        <p>Berekend met de Voetbalpoules Opta Voorspeller. Data ververst dagelijks om 17:00 CEST.</p>
+        <p>Berekend met de Voetbalpoules Polymarket Voorspeller. Data ververst dagelijks om 17:00 CEST.</p>
     </footer>
 </body>
 </html>
@@ -939,7 +939,7 @@ def polymarket_modus(toon_extra=False, output_file=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Berekent de wiskundig optimale uitslag voor voetbalpoules op basis van Opta 1X2 kansen."
+        description="Berekent de wiskundig optimale uitslag voor voetbalpoules op basis van Polymarket 1X2 kansen."
     )
     parser.add_argument("-t", "--home", type=str, help="Kans op winst voor het thuisteam (bijv. 45 of 45%%)")
     parser.add_argument("-g", "--draw", type=str, help="Kans op een gelijkspel (bijv. 28 of 28%%)")
