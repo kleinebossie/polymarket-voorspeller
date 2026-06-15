@@ -15,6 +15,7 @@ import requests
 import json
 import re
 import math
+import math
 
 # ANSI Kleurcodes voor een mooie vormgeving in de terminal (zonder extra pakketten!)
 RESET = "\033[0m"
@@ -33,12 +34,11 @@ def print_header():
     print("meeste punten (Expected Points) te behalen in je poule.")
     print("--------------------------------------------------------\n")
 
+
 def parse_percentage(val_str):
-    """Verwerkt invoer als percentage (bijv. '45', '45%', '0.45') en geeft een float terug."""
     val_str = val_str.strip().replace('%', '')
     try:
         val = float(val_str)
-        # Als de invoer tussen 0 en 1 ligt (bijv. 0.45), reken om naar percentage (45)
         if 0.0 <= val <= 1.0:
             val = val * 100.0
         return val
@@ -46,184 +46,176 @@ def parse_percentage(val_str):
         raise ValueError(f"Ongeldig getal: '{val_str}'")
 
 def normaliseer_kansen(home, draw, away):
-    """Zorgt dat de som van de kansen precies 1.0 (100%) is."""
     totaal = home + draw + away
     if totaal == 0:
         return 0.0, 0.0, 0.0
     return home / totaal, draw / totaal, away / totaal
 
-def bereken_lambda(p_h_prime, p_a_prime):
-    """Berekent de verwachte doelpunten (lambda/xG) per team."""
-    lambda_h = 1.05 + 1.85 * (p_h_prime - p_a_prime) + 0.5 * p_h_prime
-    lambda_a = 1.05 - 1.85 * (p_h_prime - p_a_prime) + 0.5 * p_a_prime
-    
-    # Grenscontroles volgens het rapport (tussen 0.3 en 3.5)
-    lambda_h = max(0.3, min(3.5, lambda_h))
-    lambda_a = max(0.3, min(3.5, lambda_a))
-    return lambda_h, lambda_a
+def poisson(lam, k):
+    return math.exp(-lam) * (lam ** k) / math.factorial(k)
 
-def bereken_xpts(lam_h, lam_a, uitslag):
-    """Berekent de verwachte punten (Expected Points/EV) via een Poisson-verdeling."""
-    if not uitslag or "-" not in uitslag:
-        return 0.0
-    try:
-        pred_h, pred_a = map(int, uitslag.split("-"))
-    except ValueError:
-        return 0.0
-        
-    ev = 0.0
-    for act_h in range(10):
-        for act_a in range(10):
-            prob = (math.pow(lam_h, act_h) * math.exp(-lam_h) / math.factorial(act_h)) * \
-                   (math.pow(lam_a, act_a) * math.exp(-lam_a) / math.factorial(act_a))
+def calc_matrix(lam_h, lam_a):
+    matrix = {}
+    for h in range(10):
+        for a in range(10):
+            matrix[(h, a)] = poisson(lam_h, h) * poisson(lam_a, a)
+    return matrix
+
+def get_1x2_and_ou(matrix):
+    h_win = sum(p for (h,a), p in matrix.items() if h > a)
+    d = sum(p for (h,a), p in matrix.items() if h == a)
+    a_win = sum(p for (h,a), p in matrix.items() if h < a)
+    return h_win, d, a_win
+
+def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None):
+    best_lam_h, best_lam_a = 0.1, 0.1
+    best_error = float('inf')
+    
+    for lh in [x/100.0 for x in range(10, 400, 5)]:
+        for la in [x/100.0 for x in range(10, 400, 5)]:
+            matrix = calc_matrix(lh, la)
+            h, d, a = get_1x2_and_ou(matrix)
+            error = (h - target_h)**2 + (d - target_d)**2 + (a - target_a)**2
             
-            pts = 0
-            # Toto correct
-            if (pred_h > pred_a and act_h > act_a) or (pred_h < pred_a and act_h < act_a):
-                pts += 5
-            elif pred_h == pred_a and act_h == act_a:
-                pts += 7
+            if target_ou:
+                for line, (t_u, t_o) in target_ou.items():
+                    u = sum(p for (sc_h,sc_a), p in matrix.items() if sc_h+sc_a < line)
+                    o = sum(p for (sc_h,sc_a), p in matrix.items() if sc_h+sc_a > line)
+                    error += ((u - t_u)**2 + (o - t_o)**2) * 0.5
+                    
+            if error < best_error:
+                best_error = error
+                best_lam_h = lh
+                best_lam_a = la
                 
-            # Goals correct
-            if pred_h == act_h:
-                pts += 1
-            if pred_a == act_a:
-                pts += 1
+    return best_lam_h, best_lam_a
+
+def calc_ev_regular(pred_h, pred_a, matrix):
+    ev = 0
+    for (act_h, act_a), prob in matrix.items():
+        pts = 0
+        if pred_h == act_h and pred_a == act_a:
+            pts += 10
+        else:
+            pred_toto = 1 if pred_h > pred_a else (-1 if pred_h < pred_a else 0)
+            act_toto = 1 if act_h > act_a else (-1 if act_h < act_a else 0)
+            if pred_toto == act_toto:
+                if pred_toto == 0:
+                    pts += 7
+                else:
+                    pts += 5
                 
-            # Doelsaldo correct (niet bij gelijkspel)
-            if (pred_h - pred_a) == (act_h - act_a) and pred_h != pred_a:
-                pts += 1
-                
-            # Exacte uitslag bonus
-            if pred_h == act_h and pred_a == act_a:
-                pts += 2
-                
-            ev += prob * pts
+                if pred_h == act_h: pts += 2
+                if pred_a == act_a: pts += 2
+        ev += prob * pts
     return ev
 
-def geef_uitleg_normaal(p_h_prime, p_a_prime, uitslag):
-    """Geeft een eenvoudige wiskundige verklaring voor de gekozen uitslag."""
-    if uitslag == "1-1":
-        return (
-            "De kansen liggen dicht bij elkaar (geen van beide teams heeft meer dan 55% winstkans).\n"
-            "Omdat een goed voorspeld gelijkspel 7 punten oplevert (tegenover 5 voor winst),\n"
-            "is 1-1 wiskundig veruit de veiligste keuze met de hoogste verwachte waarde."
-        )
-    else:
-        fav_team = "thuisploeg" if p_h_prime > p_a_prime else "uitploeg"
-        fav_pct = max(p_h_prime, p_a_prime) * 100
-        return (
-            f"De {fav_team} is een zware favoriet met maar liefst {fav_pct:.1f}% winstkans (meer dan 55%).\n"
-            "Hierdoor kantelt de wiskunde in het voordeel van een overwinning.\n"
-            f"De uitslag {uitslag} balanceert de kans op een clean sheet versus een doelpunt van de tegenstander."
-        )
-
-def geef_uitleg_motd(p_h_prime, p_a_prime, uitslag):
-    """Geeft uitleg voor de Wedstrijd van de Dag uitslag."""
-    if uitslag == "0-0":
-        return (
-            "Er is geen extreme favoriet in deze wedstrijd (winstkansen onder 48%).\n"
-            "Hierdoor is de wiskundige 'Geen Score' (0-0) truc van kracht!\n"
-            "Spitsen scoren in minder dan 35% van de gevallen de eerste goal, maar 'Geen score' is\n"
-            "altijd 100% gegarandeerd correct als een team 0 goals maakt. Dit levert 8 extra bonuspunten op!"
-        )
-    else:
-        fav_team = "thuisploeg" if p_h_prime > p_a_prime else "uitploeg"
-        return (
-            f"De {fav_team} is een overduidelijke favoriet (meer dan 48% winstkans) en de tegenstander is erg zwak.\n"
-            f"Daarom voorspellen we een {uitslag} overwinning.\n"
-            "Voor de favoriet vullen we de topspits in omdat de kans op goals erg groot is.\n"
-            "Voor de underdog vullen we nog steeds 'Geen score' in om daar de veilige bonus te pakken."
-        )
-
-def voorspel(home_pct, draw_pct, away_pct, is_motd):
-    """Berekent de optimale uitslag op basis van de beslisboom in het rapport."""
-    # Stap 1: Normaliseren
-    p_h_prime, p_d_prime, p_a_prime = normaliseer_kansen(home_pct, draw_pct, away_pct)
+def calc_ev_motd(pred_h, pred_a, matrix):
+    pred_scorer_h = (pred_h > 0)
+    pred_scorer_a = (pred_a > 0)
     
-    # Stap 2: Heuristische verwachte doelpunten (lambda/xG)
-    lambda_h, lambda_a = bereken_lambda(p_h_prime, p_a_prime)
-    
-    uitslag = ""
-    scorer_thuis = ""
-    scorer_uit = ""
-    uitleg = ""
-    
-    # Stap 3: Algoritmische bepaling
-    if not is_motd:
-        # A. Normale Wedstrijd
-        if p_h_prime > 0.55:
-            if (p_d_prime + p_a_prime) < 0.35:
-                uitslag = "2-0"
-            else:
-                uitslag = "2-1"
-        elif p_a_prime > 0.55:
-            if (p_h_prime + p_d_prime) < 0.35:
-                uitslag = "0-2"
-            else:
-                uitslag = "1-2"
+    ev = 0
+    for (act_h, act_a), prob in matrix.items():
+        pts = 0
+        if pred_h == act_h and pred_a == act_a:
+            pts += 12
         else:
-            uitslag = "1-1"
-        uitleg = geef_uitleg_normaal(p_h_prime, p_a_prime, uitslag)
-    else:
-        # B. Wedstrijd van de Dag (MOTD)
-        if p_h_prime > 0.48 and p_a_prime < 0.25:
-            uitslag = "2-0"
-            scorer_thuis = "Primaire startende spits (en vaste penaltynemer)"
-            scorer_uit = "Geen score"
-        elif p_a_prime > 0.48 and p_h_prime < 0.25:
-            uitslag = "0-2"
-            scorer_thuis = "Geen score"
-            scorer_uit = "Primaire startende spits (en vaste penaltynemer)"
+            pred_toto = 1 if pred_h > pred_a else (-1 if pred_h < pred_a else 0)
+            act_toto = 1 if act_h > act_a else (-1 if act_h < act_a else 0)
+            if pred_toto == act_toto:
+                if pred_toto == 0:
+                    pts += 8
+                else:
+                    pts += 6
+                
+                if pred_h == act_h: pts += 2
+                if pred_a == act_a: pts += 2
+                
+        if not pred_scorer_h:
+            if act_h == 0: pts += 4
         else:
-            uitslag = "0-0"
-            scorer_thuis = "Geen score"
-            scorer_uit = "Geen score"
-        uitleg = geef_uitleg_motd(p_h_prime, p_a_prime, uitslag)
+            if act_h > 0: pts += 4 * 0.35
+            
+        if not pred_scorer_a:
+            if act_a == 0: pts += 4
+        else:
+            if act_a > 0: pts += 4 * 0.35
+            
+        ev += prob * pts
         
-    xpts = bereken_xpts(lambda_h, lambda_a, uitslag)
-        
+    return ev, (pred_scorer_h, pred_scorer_a)
+
+def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None):
+    p_h, p_d, p_a = normaliseer_kansen(home_pct, draw_pct, away_pct)
+    lam_h, lam_a = bepaal_poisson_lambdas(p_h, p_d, p_a, ou_probs)
+    matrix = calc_matrix(lam_h, lam_a)
+    
+    best_ev = -1
+    best_pred = (0, 0)
+    best_scorers = (False, False)
+    
+    for h in range(7):
+        for a in range(7):
+            if is_motd:
+                ev, scorers = calc_ev_motd(h, a, matrix)
+            else:
+                ev = calc_ev_regular(h, a, matrix)
+                scorers = (False, False)
+                
+            if ev > best_ev:
+                best_ev = ev
+                best_pred = (h, a)
+                best_scorers = scorers
+                
+    uitslag = f"{best_pred[0]}-{best_pred[1]}"
+    
+    if is_motd:
+        scorer_thuis = "Spits (of penaltynemer)" if best_scorers[0] else "Geen score"
+        scorer_uit = "Spits (of penaltynemer)" if best_scorers[1] else "Geen score"
+        uitleg = f"Maximale EV: {best_ev:.2f} verwachte punten (incl. doelpuntenmakers)."
+    else:
+        scorer_thuis = ""
+        scorer_uit = ""
+        uitleg = f"Maximale EV: {best_ev:.2f} verwachte punten."
+
     return {
-        "genormaliseerd": (p_h_prime, p_d_prime, p_a_prime),
-        "lambda": (lambda_h, lambda_a),
+        "genormaliseerd": (p_h, p_d, p_a),
+        "lambda": (lam_h, lam_a),
         "uitslag": uitslag,
-        "xpts": xpts,
         "scorer_thuis": scorer_thuis,
         "scorer_uit": scorer_uit,
-        "uitleg": uitleg
+        "uitleg": uitleg,
+        "xpts": best_ev
     }
 
 def print_resultaat(res, is_motd, toon_extra=False):
     p_h, p_d, p_a = res["genormaliseerd"]
     lam_h, lam_a = res["lambda"]
+    ev_val = res.get("xpts", 0.0)
     
-    print(f"\n{BOLD}📊  GEANALYSEERDE GEGEVENS:{RESET}")
-    print(f"  • Genormaliseerde kansen: Thuis: {p_h*100:.1f}% | Gelijk: {p_d*100:.1f}% | Uit: {p_a*100:.1f}%")
-    print(f"  • Verwachte doelpunten (xG): Thuis: {lam_h:.2f} goals | Uit: {lam_a:.2f} goals")
+    print(f"\n{BOLD}📊  GEANALYSEERDE GEGEVENS (POISSON MODEL):{RESET}")
+    print(f"  • Implied Kansen: Thuis: {p_h*100:.1f}% | Gelijk: {p_d*100:.1f}% | Uit: {p_a*100:.1f}%")
+    print(f"  • Berekende xG: Thuis: {lam_h:.2f} | Uit: {lam_a:.2f}")
     
-    print(f"\n{GREEN}{BOLD}🏆  GEVISEERD ADVIES VOOR JOUW POULE:{RESET}")
+    print(f"\n{GREEN}{BOLD}🏆  MAXIMALE EXPECTED VALUE (EV) ADVIES:{RESET}")
     print(f"  • {BOLD}Voorspelde uitslag:{RESET} {GREEN}{BOLD}{res['uitslag']}{RESET}")
     
     if is_motd:
-        print(f"  • {BOLD}Eerste doelpuntenmaker Thuis:{RESET} {YELLOW}{res['scorer_thuis']}{RESET}")
-        print(f"  • {BOLD}Eerste doelpuntenmaker Uit:{RESET} {YELLOW}{res['scorer_uit']}{RESET}")
+        print(f"  • {BOLD}Doelpuntenmaker Thuis:{RESET} {YELLOW}{res['scorer_thuis']}{RESET}")
+        print(f"  • {BOLD}Doelpuntenmaker Uit:{RESET} {YELLOW}{res['scorer_uit']}{RESET}")
     
-    print(f"\n{BOLD}💡  WAAROM DIT DE BESTE KEUZE IS:{RESET}")
+    print(f"\n{BOLD}💡  BEREKENING:{RESET}")
     print(f"  {res['uitleg']}")
     
     if toon_extra:
-        print(f"\n{BOLD}⏱️  TIE-BREAKER EXTRA VRAGEN (Wiskundige Mediaan):{RESET}")
-        print(f"  • {BOLD}Minuut van het 1e toernooidoelpunt:{RESET} {YELLOW}31e minuut{RESET} (Mediaan EK/WK)")
-        print(f"  • {BOLD}Minuut van de 1e gele kaart:{RESET} {YELLOW}36e minuut{RESET} (Asymmetrische scheidsrechter-bias)")
-        print(f"  • {BOLD}Minuut van de 1e rode kaart:{RESET} {YELLOW}411e minuut{RESET} (Lange termijn toernooiklok)")
-        print()
-    else:
-        print(f"\n{YELLOW}💡 Tip: Start het programma met de optie '--extra' of '-e' om de toernooi-strafvragen te zien.{RESET}\n")
+        print(f"\n{BOLD}⏱️  TIE-BREAKER EXTRA VRAGEN:{RESET}")
+        print(f"  • {BOLD}Minuut van het 1e toernooidoelpunt:{RESET} {YELLOW}31e minuut{RESET} (Mediaan)")
+        print(f"  • {BOLD}Minuut van de 1e gele kaart:{RESET} {YELLOW}36e minuut{RESET}")
+        print(f"  • {BOLD}Minuut van de 1e rode kaart:{RESET} {YELLOW}411e minuut{RESET}\n")
 
 def interactieve_modus(toon_extra=False):
     print_header()
     
-    # Vraag type wedstrijd
     while True:
         wedstrijd_type = input(f"{BOLD}Is dit de 'Wedstrijd van de Dag' (MOTD)? (ja/nee): {RESET}").strip().lower()
         if wedstrijd_type in ['ja', 'j', 'yes', 'y']:
@@ -235,7 +227,6 @@ def interactieve_modus(toon_extra=False):
         else:
             print(f"{RED}Vul alstublieft 'ja' of 'nee' in.{RESET}")
             
-    # Vraag kansen
     print(f"\n{BOLD}Voer de winstkansen in (bijv. 45 of 45% of 0.45):{RESET}")
     while True:
         try:
@@ -263,6 +254,7 @@ def interactieve_modus(toon_extra=False):
             
     res = voorspel(home, draw, away, is_motd)
     print_resultaat(res, is_motd, toon_extra=toon_extra)
+
 
 MOTD_LIST = [
     {"nederland", "netherlands", "japan"},
@@ -301,10 +293,9 @@ def is_motd_match(home, away):
     return False
 
 def haal_polymarket_wedstrijden():
-    """Haalt actieve WK voetbalwedstrijden en hun kansen op van Polymarket."""
     url = "https://gamma-api.polymarket.com/events"
     params = {
-        "tag_id": 100350,  # Voetbal tag
+        "tag_id": 100350,
         "active": "true",
         "closed": "false",
         "limit": 100
@@ -321,13 +312,10 @@ def haal_polymarket_wedstrijden():
             title = e.get("title", "")
             slug = e.get("slug", "")
             
-            # Filter specifiek op WK voetbal
             if not (slug.startswith("fifwc-") or "world-cup" in slug.lower() or "world cup" in title.lower()):
                 continue
                 
             markets = e.get("markets", [])
-            
-            # Splits teamnamen (bijv. "Ghana vs. Panama" of "EPL: Ghana vs. Panama")
             team_part = title
             if ":" in title:
                 team_part = title.split(":")[-1].strip()
@@ -339,56 +327,69 @@ def haal_polymarket_wedstrijden():
             home_team = teams[0].strip()
             away_team = teams[1].strip()
             
-            home_prob = None
-            draw_prob = None
-            away_prob = None
-            
+            home_prob = draw_prob = away_prob = None
+            ou_probs = {}
             non_draw_markets = []
+            
             for m in markets:
-                q = m.get("question", "")
+                q = m.get("question", "").lower()
                 prices_str = m.get("outcomePrices")
                 if not prices_str:
                     continue
-                    
                 prices = json.loads(prices_str)
                 if len(prices) < 1:
                     continue
-                    
                 yes_price = float(prices[0])
                 
-                if "draw" in q.lower():
+                match_ou = re.search(r'(over|under) (\d+\.5) goals', q)
+                if match_ou:
+                    type_ou = match_ou.group(1)
+                    line = float(match_ou.group(2))
+                    if line not in ou_probs:
+                        ou_probs[line] = [None, None]
+                    if type_ou == 'under':
+                        ou_probs[line][0] = yes_price
+                    else:
+                        ou_probs[line][1] = yes_price
+                elif "draw" in q:
                     draw_prob = yes_price
                 else:
                     non_draw_markets.append((q, yes_price))
                     
-            if len(non_draw_markets) == 2:
+            if len(non_draw_markets) >= 2:
                 home_words = set(re.findall(r'\w+', home_team.lower()))
                 away_words = set(re.findall(r'\w+', away_team.lower()))
                 
-                m1_q, m1_p = non_draw_markets[0]
-                m2_q, m2_p = non_draw_markets[1]
+                best_m_home = best_m_away = None
+                max_score_h = max_score_a = 0
                 
-                m1_words = set(re.findall(r'\w+', m1_q.lower()))
-                m2_words = set(re.findall(r'\w+', m2_q.lower()))
-                
-                m1_home_score = len(m1_words.intersection(home_words))
-                m1_away_score = len(m1_words.intersection(away_words))
-                
-                m2_home_score = len(m2_words.intersection(home_words))
-                m2_away_score = len(m2_words.intersection(away_words))
-                
-                score_A = m1_home_score + m2_away_score
-                score_B = m2_home_score + m1_away_score
-                
-                if score_A >= score_B:
-                    home_prob = m1_p
-                    away_prob = m2_p
-                else:
-                    home_prob = m2_p
-                    away_prob = m1_p
+                for mq, mp in non_draw_markets:
+                    mq_words = set(re.findall(r'\w+', mq))
+                    sc_h = len(mq_words.intersection(home_words))
+                    sc_a = len(mq_words.intersection(away_words))
                     
+                    if sc_h > max_score_h:
+                        max_score_h = sc_h
+                        best_m_home = mp
+                    if sc_a > max_score_a:
+                        max_score_a = sc_a
+                        best_m_away = mp
+                        
+                if best_m_home and best_m_away:
+                    home_prob = best_m_home
+                    away_prob = best_m_away
+
             if home_prob is not None and draw_prob is not None and away_prob is not None:
-                is_motd = is_motd_match(home_team, away_team)
+                final_ou = {}
+                for line, (u, o) in ou_probs.items():
+                    if u is not None and o is not None:
+                        tot = u + o
+                        final_ou[line] = (u/tot, o/tot)
+                    elif o is not None:
+                        final_ou[line] = (1-o, o)
+                    elif u is not None:
+                        final_ou[line] = (u, 1-u)
+                
                 parsed_matches.append({
                     "title": team_part,
                     "home": home_team,
@@ -396,11 +397,11 @@ def haal_polymarket_wedstrijden():
                     "home_prob": home_prob * 100.0,
                     "draw_prob": draw_prob * 100.0,
                     "away_prob": away_prob * 100.0,
+                    "ou_probs": final_ou,
                     "date": e.get("endDate", ""),
-                    "is_motd": is_motd
+                    "is_motd": is_motd_match(home_team, away_team)
                 })
                 
-        # Sorteer chronologisch op datum/tijd voor een overzichtelijke lijst
         parsed_matches.sort(key=lambda x: x["date"])
         return parsed_matches, None
     except Exception as err:
@@ -418,6 +419,7 @@ def exporteer_naar_bestand(alle_res, bestandsnaam):
             for m, res in alle_res:
                 kansen_str = f"{m['home_prob']:.1f}% / {m['draw_prob']:.1f}% / {m['away_prob']:.1f}%"
                 lam_h, lam_a = res["lambda"]
+                ev_val = res.get("xpts", 0.0)
                 xg_str = f"{lam_h:.2f} - {lam_a:.2f}"
                 datum_str = m['date'].replace('T', ' ')[:16]
                 
@@ -743,6 +745,7 @@ def exporteer_naar_html(alle_res, bestandsnaam):
         datum_str = m['date'].replace('T', ' ')[:16]
         kansen_str = f"{m['home_prob']:.0f}% / {m['draw_prob']:.0f}% / {m['away_prob']:.0f}%"
         lam_h, lam_a = res["lambda"]
+        ev_val = res.get("xpts", 0.0)
         
         # Build card html
         html_content += f"""
@@ -865,7 +868,7 @@ def polymarket_modus(toon_extra=False, output_file=None):
                     else:
                         print(f"{RED}Vul alstublieft 'ja' of 'nee' in.{RESET}")
                 
-                res = voorspel(m['home_prob'], m['draw_prob'], m['away_prob'], is_motd)
+                res = voorspel(m['home_prob'], m['draw_prob'], m['away_prob'], is_motd, ou_probs=m.get('ou_probs'))
                 print_resultaat(res, is_motd, toon_extra=toon_extra)
                 break
                 
@@ -875,7 +878,7 @@ def polymarket_modus(toon_extra=False, output_file=None):
                 
                 alle_res = []
                 for m in matches:
-                    res = voorspel(m['home_prob'], m['draw_prob'], m['away_prob'], is_motd=m['is_motd'])
+                    res = voorspel(m['home_prob'], m['draw_prob'], m['away_prob'], is_motd=m['is_motd'], ou_probs=m['ou_probs'])
                     alle_res.append((m, res))
                     
                 # Toon tabel
@@ -887,6 +890,7 @@ def polymarket_modus(toon_extra=False, output_file=None):
                 for m, res in alle_res:
                     kansen_str = f"{m['home_prob']:.0f}% / {m['draw_prob']:.0f}% / {m['away_prob']:.0f}%"
                     lam_h, lam_a = res["lambda"]
+                    ev_val = res.get("xpts", 0.0)
                     xg_str = f"{lam_h:.2f} - {lam_a:.2f}"
                     datum_str = m['date'].replace('T', ' ')[:16]
                     
@@ -948,7 +952,7 @@ def main():
                 
             alle_res = []
             for m in matches:
-                res = voorspel(m['home_prob'], m['draw_prob'], m['away_prob'], is_motd=m['is_motd'])
+                res = voorspel(m['home_prob'], m['draw_prob'], m['away_prob'], is_motd=m['is_motd'], ou_probs=m['ou_probs'])
                 alle_res.append((m, res))
                 
             if args.output:
