@@ -51,6 +51,20 @@ def normaliseer_kansen(home, draw, away):
         return 0.0, 0.0, 0.0
     return home / totaal, draw / totaal, away / totaal
 
+def converteer_utc_naar_nl(utc_str):
+    if not utc_str:
+        return ""
+    try:
+        from zoneinfo import ZoneInfo
+        import datetime
+        clean_str = utc_str.replace('Z', '+00:00')
+        dt_utc = datetime.datetime.fromisoformat(clean_str)
+        dt_nl = dt_utc.astimezone(ZoneInfo("Europe/Amsterdam"))
+        return dt_nl.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return utc_str.replace('T', ' ')[:16]
+
+
 def poisson(lam, k):
     return math.exp(-lam) * (lam ** k) / math.factorial(k)
 
@@ -421,7 +435,7 @@ def exporteer_naar_bestand(alle_res, bestandsnaam):
                 lam_h, lam_a = res["lambda"]
                 ev_val = res.get("xpts", 0.0)
                 xg_str = f"{lam_h:.2f} - {lam_a:.2f}"
-                datum_str = m['date'].replace('T', ' ')[:16]
+                datum_str = converteer_utc_naar_nl(m['date'])
                 
                 advies_str = res["uitslag"]
                 if m["is_motd"]:
@@ -443,8 +457,10 @@ def exporteer_naar_bestand(alle_res, bestandsnaam):
 
 def exporteer_naar_html(alle_res, bestandsnaam):
     """Genereert een prachtige, mobielvriendelijke HTML-pagina (index.html) met de voorspellingen."""
+    from zoneinfo import ZoneInfo
     import datetime
-    nu_str = datetime.datetime.now().strftime("%d-%m-%Y %H:%M")
+    nu_nl = datetime.datetime.now(ZoneInfo("Europe/Amsterdam"))
+    nu_str = nu_nl.strftime("%d-%m-%Y %H:%M")
     
     html_content = f"""<!DOCTYPE html>
 <html lang="nl">
@@ -742,7 +758,7 @@ def exporteer_naar_html(alle_res, bestandsnaam):
     for m, res in alle_res:
         motd_badge = '<span class="motd-badge">Wedstrijd van de Dag</span>' if m["is_motd"] else ''
         card_class = 'is-motd' if m["is_motd"] else ''
-        datum_str = m['date'].replace('T', ' ')[:16]
+        datum_str = converteer_utc_naar_nl(m['date'])
         kansen_str = f"{m['home_prob']:.0f}% / {m['draw_prob']:.0f}% / {m['away_prob']:.0f}%"
         lam_h, lam_a = res["lambda"]
         ev_val = res.get("xpts", 0.0)
@@ -836,7 +852,7 @@ def polymarket_modus(toon_extra=False, output_file=None):
     while True:
         print(f"{BOLD}Beschikbare wedstrijden (chronologisch):{RESET}")
         for idx, m in enumerate(matches):
-            datum_str = m['date'].replace('T', ' ')[:16]
+            datum_str = converteer_utc_naar_nl(m['date'])
             motd_label = " [MOTD]" if m['is_motd'] else ""
             print(f"  {idx+1:2d}. [{datum_str}] {m['home']} vs. {m['away']}{motd_label} (Odds: {m['home_prob']:.1f}% / {m['draw_prob']:.1f}% / {m['away_prob']:.1f}%)")
         print(f"  {len(matches)+1:2d}. [Voorspel ALLE wedstrijden]")
@@ -892,7 +908,7 @@ def polymarket_modus(toon_extra=False, output_file=None):
                     lam_h, lam_a = res["lambda"]
                     ev_val = res.get("xpts", 0.0)
                     xg_str = f"{lam_h:.2f} - {lam_a:.2f}"
-                    datum_str = m['date'].replace('T', ' ')[:16]
+                    datum_str = converteer_utc_naar_nl(m['date'])
                     
                     advies_str = res["uitslag"]
                     if m["is_motd"]:
