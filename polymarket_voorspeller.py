@@ -7,14 +7,20 @@ Voetbalpoules Polymarket Voorspeller
 Deze tool berekent de wiskundig optimale uitslag voor voetbalpoules op basis van
 de Polymarket 1X2 winstkansen, volgens het onderzoeksrapport:
 'Optimalisatie van Expected Points (xPts) in Voetbalpoules'.
+
+Dit model maakt gebruik van Nelder-Mead optimalisatie voor het schatten van
+de Poisson-parameters en past de Dixon-Coles correctie toe om gelijkspelen
+beter te voorspellen bij lage scores.
 """
 
 import sys
 import argparse
-import requests
 import json
 import re
 import math
+import datetime
+from zoneinfo import ZoneInfo
+import requests
 from scipy.optimize import minimize
 
 # ANSI Kleurcodes voor een mooie vormgeving in de terminal (zonder extra pakketten!)
@@ -27,15 +33,29 @@ CYAN = "\033[96m"
 MAGENTA = "\033[95m"
 
 def print_header():
+    """
+    Toont de start-header in de terminal met informatie over de voetbalvoorspeller.
+    """
     print(f"\n{CYAN}{BOLD}========================================================")
     print(f"       ⚽  VOETBALPOULES POLYMARKET VOORSPELLER  ⚽")
     print(f"========================================================{RESET}")
     print("Dit programma berekent de wiskundig beste uitslag om de")
     print("meeste punten (Expected Points) te behalen in je poule.")
+    print("Model: Nelder-Mead optimalisatie + Dixon-Coles correctie")
+    print("       voor betere gelijkspelschattingen.")
     print("--------------------------------------------------------\n")
 
 
 def parse_percentage(val_str):
+    """
+    Zet een procentteken-tekst (zoals '45%') of kommagetal om naar een getal van 0 tot 100.
+    
+    Parameters:
+    val_str (str): De invoertekst die de kans representeert.
+    
+    Returns:
+    float: De kans als percentage (tussen 0.0 en 100.0).
+    """
     val_str = val_str.strip().replace('%', '')
     try:
         val = float(val_str)
@@ -46,17 +66,35 @@ def parse_percentage(val_str):
         raise ValueError(f"Ongeldig getal: '{val_str}'")
 
 def normaliseer_kansen(home, draw, away):
+    """
+    Zorgt ervoor dat de drie kansen (thuis, gelijk, uit) samen exact 100% (of 1.0) worden.
+    
+    Parameters:
+    home (float): De ingevoerde kans op thuiswinst.
+    draw (float): De ingevoerde kans op een gelijkspel.
+    away (float): De ingevoerde kans op uitwinst.
+    
+    Returns:
+    tuple: Een drietal met de genormaliseerde kansen (thuis, gelijk, uit) die optellen tot 1.0.
+    """
     totaal = home + draw + away
     if totaal == 0:
         return 0.0, 0.0, 0.0
     return home / totaal, draw / totaal, away / totaal
 
 def converteer_utc_naar_nl(utc_str):
+    """
+    Zet een UTC-tijdstip om naar de Nederlandse tijdzone en formatteert dit als leesbare tekst.
+    
+    Parameters:
+    utc_str (str): De datum/tijd-tekenreeks in UTC-formaat.
+    
+    Returns:
+    str: De geformatteerde Nederlandse datum en tijd (JJJJ-MM-DD UU:MM).
+    """
     if not utc_str:
         return ""
     try:
-        from zoneinfo import ZoneInfo
-        import datetime
         clean_str = utc_str.replace('Z', '+00:00')
         dt_utc = datetime.datetime.fromisoformat(clean_str)
         dt_nl = dt_utc.astimezone(ZoneInfo("Europe/Amsterdam"))
@@ -66,29 +104,109 @@ def converteer_utc_naar_nl(utc_str):
 
 
 def poisson(lam, k):
+    """
+    Berekent de kans op exact k doelpunten met een bepaald gemiddelde aantal doelpunten (lambda).
+    
+    Parameters:
+    lam (float): Het verwachte gemiddelde aantal doelpunten (lambda).
+    k (int): Het aantal doelpunten waarvoor de kans berekend moet worden.
+    
+    Returns:
+    float: De kans op exact k doelpunten volgens de Poisson-verdeling.
+    """
     return math.exp(-lam) * (lam ** k) / math.factorial(k)
 
-def calc_matrix(lam_h, lam_a):
+def dixon_coles_tau(h, a, lam_h, lam_a, rho):
+    """
+    Berekent de Dixon-Coles correctiefactor voor uitslagen met lage scores (0 en 1 doelpunten).
+    Dit helpt om de kans op gelijkspelen en nipte overwinningen beter te schatten.
+    
+    Parameters:
+    h (int): Het aantal doelpunten van het thuisteam.
+    a (int): Het aantal doelpunten van het uitteam.
+    lam_h (float): Het verwachte gemiddelde aantal doelpunten van het thuisteam.
+    lam_a (float): Het verwachte gemiddelde aantal doelpunten van het uitteam.
+    rho (float): De Dixon-Coles correctieparameter (ρ).
+    
+    Returns:
+    float: De vermenigvuldigingsfactor voor de kans op deze specifieke uitslag.
+    """
+    if h == 0 and a == 0:
+        return 1.0 - lam_h * lam_a * rho
+    elif h == 1 and a == 0:
+        return 1.0 + lam_a * rho
+    elif h == 0 and a == 1:
+        return 1.0 + lam_h * rho
+    elif h == 1 and a == 1:
+        return 1.0 - rho
+    else:
+        return 1.0
+
+def calc_matrix(lam_h, lam_a, rho=0.0):
+    """
+    Berekent de kansenmatrix voor uitslagen van 0-0 tot 9-9 op basis van de Poisson-verdelingen
+    en de Dixon-Coles correctieparameter.
+    
+    Parameters:
+    lam_h (float): Het verwachte gemiddelde aantal doelpunten van het thuisteam.
+    lam_a (float): Het verwachte gemiddelde aantal doelpunten van het uitteam.
+    rho (float, optioneel): De Dixon-Coles correctieparameter (ρ). Standaard 0.0.
+    
+    Returns:
+    dict: Een woordenboek met uitslagen (thuis, uit) als sleutels en hun kansen als waarden.
+    """
     matrix = {}
+    totaal = 0.0
     for h in range(10):
         for a in range(10):
-            matrix[(h, a)] = poisson(lam_h, h) * poisson(lam_a, a)
+            prob = poisson(lam_h, h) * poisson(lam_a, a) * dixon_coles_tau(h, a, lam_h, lam_a, rho)
+            prob = max(0.0, prob)
+            matrix[(h, a)] = prob
+            totaal += prob
+            
+    if totaal > 0.0:
+        for key in matrix:
+            matrix[key] /= totaal
     return matrix
 
 def get_1x2_and_ou(matrix):
+    """
+    Berekent de totale kansen op thuiswinst (1), gelijkspel (X) en uitwinst (2) uit de kansenmatrix.
+    
+    Parameters:
+    matrix (dict): De berekende kansenmatrix voor alle uitslagen.
+    
+    Returns:
+    tuple: Een drietal met de totale kans op (thuiswinst, gelijkspel, uitwinst).
+    """
     h_win = sum(p for (h,a), p in matrix.items() if h > a)
     d = sum(p for (h,a), p in matrix.items() if h == a)
     a_win = sum(p for (h,a), p in matrix.items() if h < a)
     return h_win, d, a_win
 
 def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None):
+    """
+    Vindt de optimale Poisson-lambda's en de Dixon-Coles rho-waarde die het beste aansluiten
+    bij de gewenste winst-, gelijkspel- en verlieskansen (en eventuele over/under kansen).
+    Dit gebeurt met behulp van de Nelder-Mead optimalisatie.
+    
+    Parameters:
+    target_h (float): De gewenste (genormaliseerde) kans op thuiswinst.
+    target_d (float): De gewenste (genormaliseerde) kans op gelijkspel.
+    target_a (float): De gewenste (genormaliseerde) kans op uitwinst.
+    target_ou (dict, optioneel): Kansen voor over/under doelpuntengrenzen.
+    
+    Returns:
+    tuple: Een drietal met de berekende parameters (lambda_thuis, lambda_uit, rho).
+    """
     def objective(params):
-        lam_h, lam_a = params
-        # Zorg dat de lambda's binnen het geldige bereik liggen tijdens de optimalisatie
+        lam_h, lam_a, rho = params
+        # Zorg dat de lambda's en rho binnen het geldige bereik liggen tijdens de optimalisatie
         lh = max(0.05, min(lam_h, 5.0))
         la = max(0.05, min(lam_a, 5.0))
+        r = max(-0.25, min(rho, 0.10))
         
-        matrix = calc_matrix(lh, la)
+        matrix = calc_matrix(lh, la, r)
         h, d, a = get_1x2_and_ou(matrix)
         error = (h - target_h)**2 + (d - target_d)**2 + (a - target_a)**2
         
@@ -99,15 +217,27 @@ def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None):
                 error += ((u - t_u)**2 + (o - t_o)**2) * 0.5
         return error
 
-    res = minimize(objective, [1.3, 1.0], method='Nelder-Mead')
+    res = minimize(objective, [1.3, 1.0, -0.05], method='Nelder-Mead')
     
-    # Zorg dat de definitieve resultaten worden afgekapt (clipped) tot het bereik [0.05, 5.0]
+    # Zorg dat de definitieve resultaten worden afgekapt (clipped) tot het bereik [0.05, 5.0] en [-0.25, 0.10]
     lam_h_opt = max(0.05, min(res.x[0], 5.0))
     lam_a_opt = max(0.05, min(res.x[1], 5.0))
+    rho_opt = max(-0.25, min(res.x[2], 0.10))
     
-    return lam_h_opt, lam_a_opt
+    return lam_h_opt, lam_a_opt, rho_opt
 
 def calc_ev_regular(pred_h, pred_a, matrix):
+    """
+    Berekent de verwachte waarde (Expected Value, EV) in punten voor een voorspelde uitslag in een normale poule.
+    
+    Parameters:
+    pred_h (int): Het voorspelde aantal doelpunten van het thuisteam.
+    pred_a (int): Het voorspelde aantal doelpunten van het uitteam.
+    matrix (dict): De berekende kansenmatrix voor alle uitslagen.
+    
+    Returns:
+    float: Het verwachte aantal punten voor deze voorspelling.
+    """
     ev = 0
     for (act_h, act_a), prob in matrix.items():
         pts = 0
@@ -128,6 +258,18 @@ def calc_ev_regular(pred_h, pred_a, matrix):
     return ev
 
 def calc_ev_motd(pred_h, pred_a, matrix):
+    """
+    Berekent de verwachte waarde (Expected Value, EV) in punten voor de Wedstrijd van de Dag (MOTD),
+    waarbij extra punten voor doelpuntenmakers (spitsen) worden meegerekend.
+    
+    Parameters:
+    pred_h (int): Het voorspelde aantal doelpunten van het thuisteam.
+    pred_a (int): Het voorspelde aantal doelpunten van het uitteam.
+    matrix (dict): De berekende kansenmatrix voor alle uitslagen.
+    
+    Returns:
+    tuple: Een duo met (de verwachte punten, (thuis_scorer_tip, uit_scorer_tip)).
+    """
     pred_scorer_h = (pred_h > 0)
     pred_scorer_a = (pred_a > 0)
     
@@ -163,9 +305,23 @@ def calc_ev_motd(pred_h, pred_a, matrix):
     return ev, (pred_scorer_h, pred_scorer_a)
 
 def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None):
+    """
+    Berekent de optimale voorspelling door de uitslag te zoeken die de verwachte waarde (EV) maximaliseert.
+    
+    Parameters:
+    home_pct (float): De kans op thuiswinst (percentage).
+    draw_pct (float): De kans op gelijkspel (percentage).
+    away_pct (float): De kans op uitwinst (percentage).
+    is_motd (bool): Geeft aan of dit de Wedstrijd van de Dag (MOTD) is.
+    ou_probs (dict, optioneel): Kansen voor over/under grenzen.
+    
+    Returns:
+    dict: Een woordenboek met alle resultaten, zoals genormaliseerde kansen, lambda's, rho,
+          de geadviseerde uitslag, tips voor doelpuntenmakers en de maximale verwachte punten.
+    """
     p_h, p_d, p_a = normaliseer_kansen(home_pct, draw_pct, away_pct)
-    lam_h, lam_a = bepaal_poisson_lambdas(p_h, p_d, p_a, ou_probs)
-    matrix = calc_matrix(lam_h, lam_a)
+    lam_h, lam_a, rho = bepaal_poisson_lambdas(p_h, p_d, p_a, ou_probs)
+    matrix = calc_matrix(lam_h, lam_a, rho)
     
     best_ev = -1
     best_pred = (0, 0)
@@ -198,6 +354,7 @@ def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None):
     return {
         "genormaliseerd": (p_h, p_d, p_a),
         "lambda": (lam_h, lam_a),
+        "rho": rho,
         "uitslag": uitslag,
         "scorer_thuis": scorer_thuis,
         "scorer_uit": scorer_uit,
@@ -206,13 +363,22 @@ def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None):
     }
 
 def print_resultaat(res, is_motd, toon_extra=False):
+    """
+    Toont de geanalyseerde gegevens en het voorspellingsadvies op een overzichtelijke manier in de terminal.
+    
+    Parameters:
+    res (dict): Het resultaatwoordenboek uit de voorspel-functie.
+    is_motd (bool): Geeft aan of dit de Wedstrijd van de Dag (MOTD) is.
+    toon_extra (bool, optioneel): Of er extra tie-breaker statistieken getoond moeten worden. Standaard False.
+    """
     p_h, p_d, p_a = res["genormaliseerd"]
     lam_h, lam_a = res["lambda"]
+    rho = res.get("rho", 0.0)
     ev_val = res.get("xpts", 0.0)
     
     print(f"\n{BOLD}📊  GEANALYSEERDE GEGEVENS (POISSON MODEL):{RESET}")
     print(f"  • Implied Kansen: Thuis: {p_h*100:.1f}% | Gelijk: {p_d*100:.1f}% | Uit: {p_a*100:.1f}%")
-    print(f"  • Berekende xG: Thuis: {lam_h:.2f} | Uit: {lam_a:.2f}")
+    print(f"  • Berekende xG: Thuis: {lam_h:.2f} | Uit: {lam_a:.2f} | ρ: {rho:.2f}")
     
     print(f"\n{GREEN}{BOLD}🏆  MAXIMALE EXPECTED VALUE (EV) ADVIES:{RESET}")
     print(f"  • {BOLD}Voorspelde uitslag:{RESET} {GREEN}{BOLD}{res['uitslag']}{RESET}")
@@ -231,6 +397,12 @@ def print_resultaat(res, is_motd, toon_extra=False):
         print(f"  • {BOLD}Minuut van de 1e rode kaart:{RESET} {YELLOW}411e minuut{RESET}\n")
 
 def interactieve_modus(toon_extra=False):
+    """
+    Start een interactief vraag-en-antwoordscherm in de terminal om een voorspelling voor één wedstrijd te berekenen.
+    
+    Parameters:
+    toon_extra (bool, optioneel): Of er extra tie-breaker statistieken getoond moeten worden. Standaard False.
+    """
     print_header()
     
     while True:
@@ -289,6 +461,16 @@ MOTD_LIST = [
 ]
 
 def is_motd_match(home, away):
+    """
+    Controleert of de gegeven teams overeenkomen met een van de 'Wedstrijden van de Dag' (MOTD) uit de lijst.
+    
+    Parameters:
+    home (str): De naam van de thuisploeg.
+    away (str): De naam van de uitploeg.
+    
+    Returns:
+    bool: True als het een MOTD-wedstrijd is, anders False.
+    """
     home_lower = home.lower()
     away_lower = away.lower()
     
@@ -310,6 +492,12 @@ def is_motd_match(home, away):
     return False
 
 def haal_polymarket_wedstrijden():
+    """
+    Haalt live WK-wedstrijden en bijbehorende kansen op via de Polymarket API.
+    
+    Returns:
+    tuple: Een duo met (een lijst van gevonden wedstrijden, een eventuele foutmelding).
+    """
     url = "https://gamma-api.polymarket.com/events"
     params = {
         "tag_id": 100350,
@@ -425,17 +613,24 @@ def haal_polymarket_wedstrijden():
         return None, f"Fout bij verbinding met Polymarket: {err}"
 
 def exporteer_naar_bestand(alle_res, bestandsnaam):
-    """Exporteert alle berekende uitslagen chronologisch naar een tekstbestand met xG en MOTD scorer tips."""
+    """
+    Exporteert alle berekende uitslagen chronologisch naar een tekstbestand met xG, rho en MOTD scorer tips.
+    
+    Parameters:
+    alle_res (list): Een lijst met paren van (wedstrijd_data, voorspelling_resultaat).
+    bestandsnaam (str): Het pad naar het uit te voeren tekstbestand.
+    """
     try:
         with open(bestandsnaam, "w", encoding="utf-8") as f:
-            f.write("======================================================================================================================================\n")
+            f.write("=================================================================================================================================================\n")
             f.write("                                                   WK VOORSPELLINGEN (POLYMARKET)\n")
-            f.write("======================================================================================================================================\n\n")
-            f.write(f"{'Datum/Tijd':<17} | {'Thuisploeg':<20} vs. {'Uitploeg':<20} | {'Odds (1/X/2)':<18} | {'xG (Thuis-Uit)':<15} | {'EV (pts)':<8} | {'Advies':<12} | {'Doelpuntenmaker Tips (MOTD)':<30}\n")
-            f.write("-" * 145 + "\n")
+            f.write("=================================================================================================================================================\n\n")
+            f.write(f"{'Datum/Tijd':<17} | {'Thuisploeg':<20} vs. {'Uitploeg':<20} | {'Odds (1/X/2)':<18} | {'xG (Thuis-Uit)':<15} | {'rho':<6} | {'EV (pts)':<8} | {'Advies':<12} | {'Doelpuntenmaker Tips (MOTD)':<30}\n")
+            f.write("-" * 154 + "\n")
             for m, res in alle_res:
                 kansen_str = f"{m['home_prob']:.1f}% / {m['draw_prob']:.1f}% / {m['away_prob']:.1f}%"
                 lam_h, lam_a = res["lambda"]
+                rho = res.get("rho", 0.0)
                 ev_val = res.get("xpts", 0.0)
                 xg_str = f"{lam_h:.2f} - {lam_a:.2f}"
                 datum_str = converteer_utc_naar_nl(m['date'])
@@ -450,8 +645,8 @@ def exporteer_naar_bestand(alle_res, bestandsnaam):
                     uit_tip = "Spits" if "spits" in res["scorer_uit"].lower() else "Geen"
                     scorer_str = f"Thuis: {thuis_tip} | Uit: {uit_tip}"
                     
-                f.write(f"{datum_str:<17} | {m['home']:<20} vs. {m['away']:<20} | {kansen_str:<18} | {xg_str:<15} | {ev_val:<8.2f} | {advies_str:<12} | {scorer_str:<30}\n")
-            f.write("\n======================================================================================================================================\n")
+                f.write(f"{datum_str:<17} | {m['home']:<20} vs. {m['away']:<20} | {kansen_str:<18} | {xg_str:<15} | {rho:<6.2f} | {ev_val:<8.2f} | {advies_str:<12} | {scorer_str:<30}\n")
+            f.write("\n=================================================================================================================================================\n")
             f.write("Gegenereerd door de Voetbalpoules Polymarket Voorspeller CLI.\n")
             
         print(f"{GREEN}✓ Voorspellingen succesvol opgeslagen in {BOLD}{bestandsnaam}{RESET}!\n")
@@ -459,9 +654,13 @@ def exporteer_naar_bestand(alle_res, bestandsnaam):
         print(f"{RED}❌ Fout bij opslaan van bestand: {e}{RESET}\n")
 
 def exporteer_naar_html(alle_res, bestandsnaam):
-    """Genereert een prachtige, mobielvriendelijke HTML-pagina (index.html) met de voorspellingen."""
-    from zoneinfo import ZoneInfo
-    import datetime
+    """
+    Genereert een prachtige, mobielvriendelijke HTML-pagina (index.html) met de voorspellingen.
+    
+    Parameters:
+    alle_res (list): Een lijst met paren van (wedstrijd_data, voorspelling_resultaat).
+    bestandsnaam (str): Het pad naar het te genereren HTML-bestand.
+    """
     nu_nl = datetime.datetime.now(ZoneInfo("Europe/Amsterdam"))
     nu_str = nu_nl.strftime("%d-%m-%Y %H:%M")
     
@@ -764,6 +963,7 @@ def exporteer_naar_html(alle_res, bestandsnaam):
         datum_str = converteer_utc_naar_nl(m['date'])
         kansen_str = f"{m['home_prob']:.0f}% / {m['draw_prob']:.0f}% / {m['away_prob']:.0f}%"
         lam_h, lam_a = res["lambda"]
+        rho = res.get("rho", 0.0)
         ev_val = res.get("xpts", 0.0)
         
         # Build card html
@@ -785,7 +985,7 @@ def exporteer_naar_html(alle_res, bestandsnaam):
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">xG (Verwacht)</span>
-                    <span class="detail-value">{lam_h:.2f} - {lam_a:.2f}</span>
+                    <span class="detail-value">{lam_h:.2f} - {lam_a:.2f} (ρ: {rho:.2f})</span>
                 </div>
                 
                 <div class="prediction-box">
@@ -839,6 +1039,13 @@ def exporteer_naar_html(alle_res, bestandsnaam):
         print(f"{RED}❌ Fout bij genereren HTML-bestand: {e}{RESET}\n")
 
 def polymarket_modus(toon_extra=False, output_file=None):
+    """
+    Start de Polymarket-modus waarin de gebruiker live wedstrijden kan bekijken en voorspellen via de terminal.
+    
+    Parameters:
+    toon_extra (bool, optioneel): Of er extra tie-breaker statistieken getoond moeten worden. Standaard False.
+    output_file (str, optioneel): Bestand om voorspellingen naar te exporteren.
+    """
     print_header()
     print(f"{CYAN}{BOLD}Bezig met ophalen van actieve WK-wedstrijden en odds van Polymarket...{RESET}")
     matches, error = haal_polymarket_wedstrijden()
@@ -901,14 +1108,15 @@ def polymarket_modus(toon_extra=False, output_file=None):
                     alle_res.append((m, res))
                     
                 # Toon tabel
-                print(f"{CYAN}{BOLD}================================================================================================================================================={RESET}")
+                print(f"{CYAN}{BOLD}================================================================================================================================================================={RESET}")
                 print(f"                                                               OVERZICHT ALLE VOORSPELDE WEDSTRIJDEN")
-                print(f"{CYAN}{BOLD}================================================================================================================================================={RESET}")
-                print(f"{BOLD}{'Datum/Tijd':<17} | {'Thuisploeg':<20} vs. {'Uitploeg':<20} | {'Odds (1/X/2)':<18} | {'xG (Thuis-Uit)':<15} | {'EV (pts)':<8} | {'Uitslag':<12} | {'Doelpuntenmaker Tips (MOTD)':<30}{RESET}")
-                print("-" * 145)
+                print(f"{CYAN}{BOLD}================================================================================================================================================================={RESET}")
+                print(f"{BOLD}{'Datum/Tijd':<17} | {'Thuisploeg':<20} vs. {'Uitploeg':<20} | {'Odds (1/X/2)':<18} | {'xG (Thuis-Uit)':<15} | {'rho':<6} | {'EV (pts)':<8} | {'Uitslag':<12} | {'Doelpuntenmaker Tips (MOTD)':<30}{RESET}")
+                print("-" * 154)
                 for m, res in alle_res:
                     kansen_str = f"{m['home_prob']:.0f}% / {m['draw_prob']:.0f}% / {m['away_prob']:.0f}%"
                     lam_h, lam_a = res["lambda"]
+                    rho = res.get("rho", 0.0)
                     ev_val = res.get("xpts", 0.0)
                     xg_str = f"{lam_h:.2f} - {lam_a:.2f}"
                     datum_str = converteer_utc_naar_nl(m['date'])
@@ -923,8 +1131,8 @@ def polymarket_modus(toon_extra=False, output_file=None):
                         uit_tip = "Spits" if "spits" in res["scorer_uit"].lower() else "Geen"
                         scorer_str = f"Thuis: {thuis_tip} | Uit: {uit_tip}"
                         
-                    print(f"{datum_str:<17} | {m['home']:<20} vs. {m['away']:<20} | {kansen_str:<18} | {xg_str:<15} | {ev_val:<8.2f} | {GREEN}{BOLD}{advies_str:<12}{RESET} | {YELLOW}{scorer_str:<30}{RESET}")
-                print(f"{CYAN}{BOLD}======================================================================================================================================{RESET}\n")
+                    print(f"{datum_str:<17} | {m['home']:<20} vs. {m['away']:<20} | {kansen_str:<18} | {xg_str:<15} | {rho:<6.2f} | {ev_val:<8.2f} | {GREEN}{BOLD}{advies_str:<12}{RESET} | {YELLOW}{scorer_str:<30}{RESET}")
+                print(f"{CYAN}{BOLD}================================================================================================================================================================={RESET}\n")
                 
                 # Exporteren
                 if not output_file:
@@ -941,6 +1149,9 @@ def polymarket_modus(toon_extra=False, output_file=None):
             print(f"{RED}Vul een geldig nummer in.{RESET}\n")
 
 def main():
+    """
+    Hoofdfunctie van het programma die de argumenten verwerkt en de juiste modus start.
+    """
     parser = argparse.ArgumentParser(
         description="Berekent de wiskundig optimale uitslag voor voetbalpoules op basis van Polymarket 1X2 kansen."
     )
