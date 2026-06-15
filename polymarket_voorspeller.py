@@ -15,7 +15,7 @@ import requests
 import json
 import re
 import math
-import math
+from scipy.optimize import minimize
 
 # ANSI Kleurcodes voor een mooie vormgeving in de terminal (zonder extra pakketten!)
 RESET = "\033[0m"
@@ -82,27 +82,30 @@ def get_1x2_and_ou(matrix):
     return h_win, d, a_win
 
 def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None):
-    best_lam_h, best_lam_a = 0.1, 0.1
-    best_error = float('inf')
+    def objective(params):
+        lam_h, lam_a = params
+        # Zorg dat de lambda's binnen het geldige bereik liggen tijdens de optimalisatie
+        lh = max(0.05, min(lam_h, 5.0))
+        la = max(0.05, min(lam_a, 5.0))
+        
+        matrix = calc_matrix(lh, la)
+        h, d, a = get_1x2_and_ou(matrix)
+        error = (h - target_h)**2 + (d - target_d)**2 + (a - target_a)**2
+        
+        if target_ou:
+            for line, (t_u, t_o) in target_ou.items():
+                u = sum(p for (sc_h,sc_a), p in matrix.items() if sc_h+sc_a < line)
+                o = sum(p for (sc_h,sc_a), p in matrix.items() if sc_h+sc_a > line)
+                error += ((u - t_u)**2 + (o - t_o)**2) * 0.5
+        return error
+
+    res = minimize(objective, [1.3, 1.0], method='Nelder-Mead')
     
-    for lh in [x/100.0 for x in range(10, 400, 5)]:
-        for la in [x/100.0 for x in range(10, 400, 5)]:
-            matrix = calc_matrix(lh, la)
-            h, d, a = get_1x2_and_ou(matrix)
-            error = (h - target_h)**2 + (d - target_d)**2 + (a - target_a)**2
-            
-            if target_ou:
-                for line, (t_u, t_o) in target_ou.items():
-                    u = sum(p for (sc_h,sc_a), p in matrix.items() if sc_h+sc_a < line)
-                    o = sum(p for (sc_h,sc_a), p in matrix.items() if sc_h+sc_a > line)
-                    error += ((u - t_u)**2 + (o - t_o)**2) * 0.5
-                    
-            if error < best_error:
-                best_error = error
-                best_lam_h = lh
-                best_lam_a = la
-                
-    return best_lam_h, best_lam_a
+    # Zorg dat de definitieve resultaten worden afgekapt (clipped) tot het bereik [0.05, 5.0]
+    lam_h_opt = max(0.05, min(res.x[0], 5.0))
+    lam_a_opt = max(0.05, min(res.x[1], 5.0))
+    
+    return lam_h_opt, lam_a_opt
 
 def calc_ev_regular(pred_h, pred_a, matrix):
     ev = 0
