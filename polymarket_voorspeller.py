@@ -184,7 +184,7 @@ def get_1x2_and_ou(matrix):
     a_win = sum(p for (h,a), p in matrix.items() if h < a)
     return h_win, d, a_win
 
-def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None):
+def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None, target_team_ou_home=None, target_team_ou_away=None):
     """
     Vindt de optimale Poisson-lambda's en de Dixon-Coles rho-waarde die het beste aansluiten
     bij de gewenste winst-, gelijkspel- en verlieskansen (en eventuele over/under kansen).
@@ -195,6 +195,8 @@ def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None):
     target_d (float): De gewenste (genormaliseerde) kans op gelijkspel.
     target_a (float): De gewenste (genormaliseerde) kans op uitwinst.
     target_ou (dict, optioneel): Kansen voor over/under doelpuntengrenzen.
+    target_team_ou_home (dict, optioneel): Kansen voor team-specifieke over/under grenzen (thuis).
+    target_team_ou_away (dict, optioneel): Kansen voor team-specifieke over/under grenzen (uit).
     
     Returns:
     tuple: Een drietal met de berekende parameters (lambda_thuis, lambda_uit, rho).
@@ -215,6 +217,21 @@ def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None):
                 u = sum(p for (sc_h,sc_a), p in matrix.items() if sc_h+sc_a < line)
                 o = sum(p for (sc_h,sc_a), p in matrix.items() if sc_h+sc_a > line)
                 error += ((u - t_u)**2 + (o - t_o)**2) * 0.5
+                
+        # Team totals thuisploeg: vergelijk de marginale thuisdoelpuntverdeling
+        if target_team_ou_home:
+            for line, (t_u, t_o) in target_team_ou_home.items():
+                u = sum(p for (sc_h, sc_a), p in matrix.items() if sc_h < line)
+                o = sum(p for (sc_h, sc_a), p in matrix.items() if sc_h > line)
+                error += ((u - t_u)**2 + (o - t_o)**2) * 0.8
+                
+        # Team totals uitploeg: vergelijk de marginale uitdoelpuntverdeling
+        if target_team_ou_away:
+            for line, (t_u, t_o) in target_team_ou_away.items():
+                u = sum(p for (sc_h, sc_a), p in matrix.items() if sc_a < line)
+                o = sum(p for (sc_h, sc_a), p in matrix.items() if sc_a > line)
+                error += ((u - t_u)**2 + (o - t_o)**2) * 0.8
+                
         return error
 
     res = minimize(objective, [1.3, 1.0, -0.05], method='Nelder-Mead')
@@ -304,7 +321,7 @@ def calc_ev_motd(pred_h, pred_a, matrix):
         
     return ev, (pred_scorer_h, pred_scorer_a)
 
-def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None):
+def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None, team_ou_home=None, team_ou_away=None):
     """
     Berekent de optimale voorspelling door de uitslag te zoeken die de verwachte waarde (EV) maximaliseert.
     
@@ -314,13 +331,15 @@ def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None):
     away_pct (float): De kans op uitwinst (percentage).
     is_motd (bool): Geeft aan of dit de Wedstrijd van de Dag (MOTD) is.
     ou_probs (dict, optioneel): Kansen voor over/under grenzen.
+    team_ou_home (dict, optioneel): Kansen voor team-specifieke over/under grenzen (thuis).
+    team_ou_away (dict, optioneel): Kansen voor team-specifieke over/under grenzen (uit).
     
     Returns:
     dict: Een woordenboek met alle resultaten, zoals genormaliseerde kansen, lambda's, rho,
           de geadviseerde uitslag, tips voor doelpuntenmakers en de maximale verwachte punten.
     """
     p_h, p_d, p_a = normaliseer_kansen(home_pct, draw_pct, away_pct)
-    lam_h, lam_a, rho = bepaal_poisson_lambdas(p_h, p_d, p_a, ou_probs)
+    lam_h, lam_a, rho = bepaal_poisson_lambdas(p_h, p_d, p_a, ou_probs, target_team_ou_home=team_ou_home, target_team_ou_away=team_ou_away)
     matrix = calc_matrix(lam_h, lam_a, rho)
     
     best_ev = -1
@@ -359,7 +378,9 @@ def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None):
         "scorer_thuis": scorer_thuis,
         "scorer_uit": scorer_uit,
         "uitleg": uitleg,
-        "xpts": best_ev
+        "xpts": best_ev,
+        "team_ou_home": team_ou_home,
+        "team_ou_away": team_ou_away
     }
 
 def print_resultaat(res, is_motd, toon_extra=False):
@@ -379,6 +400,19 @@ def print_resultaat(res, is_motd, toon_extra=False):
     print(f"\n{BOLD}📊  GEANALYSEERDE GEGEVENS (POISSON MODEL):{RESET}")
     print(f"  • Implied Kansen: Thuis: {p_h*100:.1f}% | Gelijk: {p_d*100:.1f}% | Uit: {p_a*100:.1f}%")
     print(f"  • Berekende xG: Thuis: {lam_h:.2f} | Uit: {lam_a:.2f} | ρ: {rho:.2f}")
+    
+    t_home = res.get("team_ou_home")
+    t_away = res.get("team_ou_away")
+    if t_home or t_away:
+        parts = []
+        if t_home:
+            for line, (u, o) in sorted(t_home.items()):
+                parts.append(f"Thuis O{line}: {o*100:.0f}%")
+        if t_away:
+            for line, (u, o) in sorted(t_away.items()):
+                parts.append(f"Uit O{line}: {o*100:.0f}%")
+        if parts:
+            print(f"  • Ploeg Totals: {' | '.join(parts)}")
     
     print(f"\n{GREEN}{BOLD}🏆  MAXIMALE EXPECTED VALUE (EV) ADVIES:{RESET}")
     print(f"  • {BOLD}Voorspelde uitslag:{RESET} {GREEN}{BOLD}{res['uitslag']}{RESET}")
@@ -534,6 +568,8 @@ def haal_polymarket_wedstrijden():
             
             home_prob = draw_prob = away_prob = None
             ou_probs = {}
+            team_ou_home = {}
+            team_ou_away = {}
             non_draw_markets = []
             
             for m in markets:
@@ -546,20 +582,66 @@ def haal_polymarket_wedstrijden():
                     continue
                 yes_price = float(prices[0])
                 
-                match_ou = re.search(r'(over|under) (\d+\.5) goals', q)
-                if match_ou:
-                    type_ou = match_ou.group(1)
-                    line = float(match_ou.group(2))
-                    if line not in ou_probs:
-                        ou_probs[line] = [None, None]
-                    if type_ou == 'under':
-                        ou_probs[line][0] = yes_price
+                # Probeer eerst team-specifiek O/U te herkennen
+                is_team_ou = False
+                match_team_ou = re.search(
+                    r'(?:will\s+)?(.+?)\s+(?:score\s+)?(over|under)\s+(\d+\.5)\s+goals'
+                    r'|'
+                    r'(over|under)\s+(\d+\.5)\s+goals?\s+(?:for\s+)?(.+)',
+                    q
+                )
+                if match_team_ou:
+                    if match_team_ou.group(1) is not None:
+                        team_name = match_team_ou.group(1).strip()
+                        type_ou = match_team_ou.group(2)
+                        line = float(match_team_ou.group(3))
                     else:
-                        ou_probs[line][1] = yes_price
-                elif "draw" in q:
-                    draw_prob = yes_price
+                        team_name = match_team_ou.group(6).strip()
+                        type_ou = match_team_ou.group(4)
+                        line = float(match_team_ou.group(5))
+                    
+                    team_name = team_name.rstrip('?').strip()
+                    team_words = set(re.findall(r'\w+', team_name.lower()))
+                    home_words = set(re.findall(r'\w+', home_team.lower()))
+                    away_words = set(re.findall(r'\w+', away_team.lower()))
+                    
+                    sc_h = len(team_words.intersection(home_words))
+                    sc_a = len(team_words.intersection(away_words))
+                    
+                    if (sc_h > 0) != (sc_a > 0):
+                        if sc_h > 0:
+                            if line not in team_ou_home:
+                                team_ou_home[line] = [None, None]
+                            if type_ou == 'under':
+                                team_ou_home[line][0] = yes_price
+                            else:
+                                team_ou_home[line][1] = yes_price
+                        else:
+                            if line not in team_ou_away:
+                                team_ou_away[line] = [None, None]
+                            if type_ou == 'under':
+                                team_ou_away[line][0] = yes_price
+                            else:
+                                team_ou_away[line][1] = yes_price
+                        is_team_ou = True
+                
+                if is_team_ou:
+                    pass
                 else:
-                    non_draw_markets.append((q, yes_price))
+                    match_ou = re.search(r'(over|under) (\d+\.5) goals', q)
+                    if match_ou:
+                        type_ou = match_ou.group(1)
+                        line = float(match_ou.group(2))
+                        if line not in ou_probs:
+                            ou_probs[line] = [None, None]
+                        if type_ou == 'under':
+                            ou_probs[line][0] = yes_price
+                        else:
+                            ou_probs[line][1] = yes_price
+                    elif "draw" in q:
+                        draw_prob = yes_price
+                    else:
+                        non_draw_markets.append((q, yes_price))
                     
             if len(non_draw_markets) >= 2:
                 home_words = set(re.findall(r'\w+', home_team.lower()))
@@ -595,6 +677,26 @@ def haal_polymarket_wedstrijden():
                     elif u is not None:
                         final_ou[line] = (u, 1-u)
                 
+                final_team_ou_home = {}
+                for line, (u, o) in team_ou_home.items():
+                    if u is not None and o is not None:
+                        tot = u + o
+                        final_team_ou_home[line] = (u/tot, o/tot)
+                    elif o is not None:
+                        final_team_ou_home[line] = (1-o, o)
+                    elif u is not None:
+                        final_team_ou_home[line] = (u, 1-u)
+                        
+                final_team_ou_away = {}
+                for line, (u, o) in team_ou_away.items():
+                    if u is not None and o is not None:
+                        tot = u + o
+                        final_team_ou_away[line] = (u/tot, o/tot)
+                    elif o is not None:
+                        final_team_ou_away[line] = (1-o, o)
+                    elif u is not None:
+                        final_team_ou_away[line] = (u, 1-u)
+                
                 parsed_matches.append({
                     "title": team_part,
                     "home": home_team,
@@ -603,6 +705,8 @@ def haal_polymarket_wedstrijden():
                     "draw_prob": draw_prob * 100.0,
                     "away_prob": away_prob * 100.0,
                     "ou_probs": final_ou,
+                    "team_ou_home": final_team_ou_home,
+                    "team_ou_away": final_team_ou_away,
                     "date": e.get("endDate", ""),
                     "is_motd": is_motd_match(home_team, away_team)
                 })
@@ -632,7 +736,12 @@ def exporteer_naar_bestand(alle_res, bestandsnaam):
                 lam_h, lam_a = res["lambda"]
                 rho = res.get("rho", 0.0)
                 ev_val = res.get("xpts", 0.0)
+                
+                has_team_ou = bool(res.get("team_ou_home") or res.get("team_ou_away"))
                 xg_str = f"{lam_h:.2f} - {lam_a:.2f}"
+                if has_team_ou:
+                    xg_str += " ✓"
+                
                 datum_str = converteer_utc_naar_nl(m['date'])
                 
                 advies_str = res["uitslag"]
@@ -966,6 +1075,29 @@ def exporteer_naar_html(alle_res, bestandsnaam):
         rho = res.get("rho", 0.0)
         ev_val = res.get("xpts", 0.0)
         
+        # Check of team totals beschikbaar zijn
+        team_ou_home = m.get('team_ou_home', {})
+        team_ou_away = m.get('team_ou_away', {})
+        
+        team_indicator_html = ""
+        team_ou_html = ""
+        if team_ou_home or team_ou_away:
+            team_indicator_html = " ✓ team O/U"
+            
+            team_ou_html = '<div class="detail-item" style="grid-column: span 2;">'
+            team_ou_html += '<span class="detail-label">Ploeg Totals (Polymarket)</span>'
+            team_ou_html += '<div style="display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.85rem;">'
+            
+            for line in sorted(set(list(team_ou_home.keys()) + list(team_ou_away.keys()))):
+                if line in team_ou_home:
+                    u, o = team_ou_home[line]
+                    team_ou_html += f'<span style="color: var(--accent-blue);">{m["home"]}: O{line} {o*100:.0f}%</span>'
+                if line in team_ou_away:
+                    u, o = team_ou_away[line]
+                    team_ou_html += f'<span style="color: var(--accent-blue);">{m["away"]}: O{line} {o*100:.0f}%</span>'
+            
+            team_ou_html += '</div></div>'
+            
         # Build card html
         html_content += f"""
         <div class="match-card {card_class}">
@@ -985,8 +1117,9 @@ def exporteer_naar_html(alle_res, bestandsnaam):
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">xG (Verwacht)</span>
-                    <span class="detail-value">{lam_h:.2f} - {lam_a:.2f} (ρ: {rho:.2f})</span>
+                    <span class="detail-value">{lam_h:.2f} - {lam_a:.2f} (ρ: {rho:.2f}){team_indicator_html}</span>
                 </div>
+                {team_ou_html}
                 
                 <div class="prediction-box">
                     <div class="detail-item">
@@ -1094,7 +1227,13 @@ def polymarket_modus(toon_extra=False, output_file=None):
                     else:
                         print(f"{RED}Vul alstublieft 'ja' of 'nee' in.{RESET}")
                 
-                res = voorspel(m['home_prob'], m['draw_prob'], m['away_prob'], is_motd, ou_probs=m.get('ou_probs'))
+                res = voorspel(
+                    m['home_prob'], m['draw_prob'], m['away_prob'],
+                    is_motd,
+                    ou_probs=m.get('ou_probs'),
+                    team_ou_home=m.get('team_ou_home'),
+                    team_ou_away=m.get('team_ou_away')
+                )
                 print_resultaat(res, is_motd, toon_extra=toon_extra)
                 break
                 
@@ -1104,7 +1243,13 @@ def polymarket_modus(toon_extra=False, output_file=None):
                 
                 alle_res = []
                 for m in matches:
-                    res = voorspel(m['home_prob'], m['draw_prob'], m['away_prob'], is_motd=m['is_motd'], ou_probs=m['ou_probs'])
+                    res = voorspel(
+                        m['home_prob'], m['draw_prob'], m['away_prob'],
+                        is_motd=m['is_motd'],
+                        ou_probs=m['ou_probs'],
+                        team_ou_home=m.get('team_ou_home'),
+                        team_ou_away=m.get('team_ou_away')
+                    )
                     alle_res.append((m, res))
                     
                 # Toon tabel
@@ -1182,7 +1327,13 @@ def main():
                 
             alle_res = []
             for m in matches:
-                res = voorspel(m['home_prob'], m['draw_prob'], m['away_prob'], is_motd=m['is_motd'], ou_probs=m['ou_probs'])
+                res = voorspel(
+                    m['home_prob'], m['draw_prob'], m['away_prob'],
+                    is_motd=m['is_motd'],
+                    ou_probs=m['ou_probs'],
+                    team_ou_home=m.get('team_ou_home'),
+                    team_ou_away=m.get('team_ou_away')
+                )
                 alle_res.append((m, res))
                 
             if args.output:
