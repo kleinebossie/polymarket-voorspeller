@@ -1,3 +1,5 @@
 ONDERZOEK.md
 PROMPTS.md
 RAPPORT.md
+__pycache__/
+*.pyc

@@ -268,9 +268,9 @@ def calc_ev_regular(pred_h, pred_a, matrix):
                     pts += 7
                 else:
                     pts += 5
-                
-                if pred_h == act_h: pts += 2
-                if pred_a == act_a: pts += 2
+            
+            if pred_h == act_h: pts += 2
+            if pred_a == act_a: pts += 2
         ev += prob * pts
     return ev
 
@@ -303,10 +303,10 @@ def calc_ev_motd(pred_h, pred_a, matrix):
                     pts += 8
                 else:
                     pts += 6
-                
-                if pred_h == act_h: pts += 2
-                if pred_a == act_a: pts += 2
-                
+            
+            if pred_h == act_h: pts += 2
+            if pred_a == act_a: pts += 2
+            
         if not pred_scorer_h:
             if act_h == 0: pts += 4
         else:
