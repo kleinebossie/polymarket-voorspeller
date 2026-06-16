@@ -2,8 +2,8 @@ name: Update WK Voorspellingen
 
 on:
   schedule:
-    # Elke 30 minuten draaien om odds continu te verversen
-    - cron: '*/30 * * * *'
+    # Draait elke 30 minuten op de rustige 13e en 43e minuut om vertragingen te minimaliseren
+    - cron: '13,43 * * * *'
   workflow_dispatch: # Hierdoor kun je de actie ook handmatig starten via Github
 
 permissions:
