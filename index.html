@@ -279,6 +279,427 @@
                 font-size: 1rem;
             }
         }
+
+        /* Rekenmodule Calculator Styles */
+        .calculator-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(6, 182, 212, 0.2);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 8px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.05);
+        }
+        
+        .calculator-card:hover {
+            border-color: rgba(6, 182, 212, 0.4);
+            box-shadow: 0 8px 30px rgba(6, 182, 212, 0.12);
+        }
+        
+        .calculator-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-green));
+        }
+        
+        .calc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            padding-bottom: 4px;
+        }
+        
+        .calc-header h2 {
+            font-size: 1.25rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            background: linear-gradient(135deg, #06b6d4, #10b981);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .calc-toggle-icon {
+            font-size: 1.1rem;
+            color: var(--accent-blue);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .calculator-card.collapsed .calc-toggle-icon {
+            transform: rotate(-90deg);
+        }
+        
+        .calc-body {
+            margin-top: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            max-height: 1200px;
+            transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s, margin-top 0.4s;
+            opacity: 1;
+        }
+        
+        .calculator-card.collapsed .calc-body {
+            max-height: 0;
+            margin-top: 0;
+            opacity: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+        
+        .calc-section-title {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        
+        .form-group label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+        
+        .input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        
+        .input-wrapper input, .input-wrapper select {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 10px 12px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        
+        .input-wrapper input:focus, .input-wrapper select:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.15);
+            background: rgba(15, 23, 42, 0.8);
+        }
+        
+        .input-wrapper .input-suffix {
+            position: absolute;
+            right: 12px;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            pointer-events: none;
+            font-weight: 600;
+        }
+        
+        .input-wrapper.has-suffix input {
+            padding-right: 28px;
+        }
+        
+        /* Switch Toggle */
+        .toggle-group {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.3);
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            transition: all 0.2s ease;
+        }
+        
+        .toggle-group:hover {
+            border-color: rgba(255, 255, 255, 0.12);
+            background: rgba(15, 23, 42, 0.4);
+        }
+        
+        .toggle-label-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        
+        .toggle-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .toggle-desc {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+        }
+        
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 46px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(15, 23, 42, 0.8);
+            transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 34px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: var(--text-secondary);
+            transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background-color: rgba(6, 182, 212, 0.2);
+            border-color: var(--accent-blue);
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(22px);
+            background-color: var(--accent-blue);
+        }
+        
+        /* Optional Over/Under section */
+        .ou-toggle-btn {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-size: 0.8rem;
+            color: var(--accent-blue);
+            cursor: pointer;
+            font-weight: 600;
+            user-select: none;
+            transition: all 0.2s ease;
+        }
+        
+        .ou-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(6, 182, 212, 0.3);
+        }
+        
+        .ou-toggle-btn .caret {
+            font-size: 0.8rem;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .ou-toggle-btn.expanded .caret {
+            transform: rotate(180deg);
+        }
+        
+        .ou-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            background: rgba(15, 23, 42, 0.25);
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px dashed var(--border-color);
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+            transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s, padding 0.4s;
+            padding-top: 0;
+            padding-bottom: 0;
+            border-width: 0;
+        }
+        
+        .ou-container.expanded {
+            max-height: 400px;
+            opacity: 1;
+            padding-top: 14px;
+            padding-bottom: 14px;
+            border-width: 1px;
+            margin-top: 4px;
+        }
+        
+        .ou-team-column {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .ou-team-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        /* Calculate Button */
+        .calc-btn {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-family: inherit;
+            font-weight: 800;
+            font-size: 0.95rem;
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.25);
+            margin-top: 6px;
+        }
+        
+        .calc-btn:hover {
+            filter: brightness(1.08);
+            box-shadow: 0 6px 20px rgba(6, 182, 212, 0.4);
+            transform: translateY(-1px);
+        }
+        
+        .calc-btn:active {
+            transform: translateY(1px);
+            box-shadow: 0 2px 10px rgba(16, 185, 129, 0.2);
+        }
+        
+        /* Results Card style */
+        .calc-results-wrapper {
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 18px;
+            margin-top: 4px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.4s ease-out;
+        }
+        
+        .calc-results-wrapper.visible {
+            display: flex;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .calc-results-card {
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+        }
+        
+        .calculator-card.is-motd-active .calc-results-card {
+            background: rgba(245, 158, 11, 0.06);
+            border-color: rgba(245, 158, 11, 0.18);
+        }
+        
+        .calc-results-details {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        
+        .calc-results-score {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--accent-green);
+            line-height: 1;
+        }
+        
+        .calculator-card.is-motd-active .calc-results-score {
+            color: var(--accent-yellow);
+        }
+        
+        .calc-error-message {
+            display: none;
+            color: var(--accent-red);
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-top: 4px;
+        }
+        
+        /* Spinner */
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.6s linear infinite;
+            display: none;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        @media (max-width: 480px) {
+            .ou-container {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -289,6 +710,162 @@
     </header>
     
     <div class="container">
+
+        <!-- Rekenmodule Calculator -->
+        <div class="match-card calculator-card collapsed" id="prediction-calculator">
+            <div class="calc-header" onclick="toggleCalculator()">
+                <h2><span>🧮 Interactieve Rekenmodule</span></h2>
+                <span class="calc-toggle-icon">▼</span>
+            </div>
+            
+            <div class="calc-body">
+                <div class="calc-section">
+                    <span class="calc-section-title">📊 1X2 Kansen (Implied Odds)</span>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="input-win-home">Thuiswinst</label>
+                            <div class="input-wrapper has-suffix">
+                                <input type="number" id="input-win-home" value="66" min="0" max="100" step="1" oninput="validateSum1X2()">
+                                <span class="input-suffix">%</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="input-win-draw">Gelijkspel</label>
+                            <div class="input-wrapper has-suffix">
+                                <input type="number" id="input-win-draw" value="22" min="0" max="100" step="1" oninput="validateSum1X2()">
+                                <span class="input-suffix">%</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="input-win-away">Uitwinst</label>
+                            <div class="input-wrapper has-suffix">
+                                <input type="number" id="input-win-away" value="12" min="0" max="100" step="1" oninput="validateSum1X2()">
+                                <span class="input-suffix">%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="calc-error-message" id="calc-error-1x2">De som van de kansen mag niet 0 zijn. De ingevoerde kansen worden automatisch genormaliseerd naar 100%.</div>
+                </div>
+                
+                <div class="toggle-group">
+                    <div class="toggle-label-container">
+                        <span class="toggle-title">Wedstrijd van de Dag (MOTD)</span>
+                        <span class="toggle-desc">Activeert extra punten voor doelpuntenmakers in de EV-berekening.</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="input-is-motd" onchange="toggleMotdStyle()">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <div class="calc-section">
+                    <div class="ou-toggle-btn" onclick="toggleOuSection()" id="ou-btn">
+                        <span>🛡️ Geavanceerde Team Over/Under Odds (Optioneel)</span>
+                        <span class="caret">▼</span>
+                    </div>
+                    
+                    <div class="ou-container" id="ou-fields-container">
+                        <!-- Thuisploeg Over/Under -->
+                        <div class="ou-team-column">
+                            <div class="ou-team-title">🏠 Thuisploeg</div>
+                            <div class="form-group">
+                                <label for="ou-home-line">Doelpuntenlijn</label>
+                                <div class="input-wrapper">
+                                    <select id="ou-home-line">
+                                        <option value="0.5">0.5</option>
+                                        <option value="1.5" selected>1.5</option>
+                                        <option value="2.5">2.5</option>
+                                        <option value="3.5">3.5</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row" style="grid-template-columns: 1fr 1fr;">
+                                <div class="form-group">
+                                    <label for="ou-home-under">Kans Under</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="ou-home-under" placeholder="Optioneel" min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ou-home-over">Kans Over</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="ou-home-over" placeholder="Optioneel" min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Uitploeg Over/Under -->
+                        <div class="ou-team-column">
+                            <div class="ou-team-title">✈️ Uitploeg</div>
+                            <div class="form-group">
+                                <label for="ou-away-line">Doelpuntenlijn</label>
+                                <div class="input-wrapper">
+                                    <select id="ou-away-line">
+                                        <option value="0.5">0.5</option>
+                                        <option value="1.5" selected>1.5</option>
+                                        <option value="2.5">2.5</option>
+                                        <option value="3.5">3.5</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row" style="grid-template-columns: 1fr 1fr;">
+                                <div class="form-group">
+                                    <label for="ou-away-under">Kans Under</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="ou-away-under" placeholder="Optioneel" min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ou-away-over">Kans Over</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="ou-away-over" placeholder="Optioneel" min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button class="calc-btn" onclick="calculatePrediction()">
+                    <span class="spinner" id="calc-spinner"></span>
+                    <span id="calc-btn-text">Bereken Optimale Voorspelling</span>
+                </button>
+                
+                <!-- Resultaten -->
+                <div class="calc-results-wrapper" id="results-wrapper">
+                    <span class="calc-results-title">🏆 Wiskundig Optimaal Advies</span>
+                    <div class="calc-results-card">
+                        <div class="calc-results-details">
+                            <span class="detail-label" style="color: var(--text-primary); font-size: 0.8rem;">Aanbevolen Uitslag</span>
+                            <span class="subtitle" style="font-size: 0.75rem; margin-bottom: 2px;">
+                                Verwachte Punten (EV): <strong style="color: var(--accent-blue);" id="result-ev">0.00 pts</strong>
+                            </span>
+                            <span class="subtitle" style="font-size: 0.75rem;" id="result-xg">
+                                xG Thuis: 0.00 | xG Uit: 0.00 (ρ: 0.00)
+                            </span>
+                        </div>
+                        <span class="calc-results-score" id="result-score">0-0</span>
+                    </div>
+                    
+                    <div class="scorer-tips" id="result-scorer-tips" style="display: none;">
+                        <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
+                        <div class="scorer-row">
+                            <span class="scorer-team">Thuisploeg:</span>
+                            <span class="scorer-name" id="result-scorer-home">Geen score</span>
+                        </div>
+                        <div class="scorer-row">
+                            <span class="scorer-team">Uitploeg:</span>
+                            <span class="scorer-name" id="result-scorer-away">Geen score</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <div class="match-card ">
             <div class="match-header">
@@ -1484,6 +2061,466 @@
         
     </div>
     
+    <script>
+        // --- CALCULATOR INTERFACE BINDINGS ---
+        function toggleCalculator() {
+            const calc = document.getElementById('prediction-calculator');
+            calc.classList.toggle('collapsed');
+        }
+
+        function toggleOuSection() {
+            const btn = document.getElementById('ou-btn');
+            const container = document.getElementById('ou-fields-container');
+            container.classList.toggle('expanded');
+            if (container.classList.contains('expanded')) {
+                btn.classList.add('expanded');
+            } else {
+                btn.classList.remove('expanded');
+            }
+        }
+
+        function toggleMotdStyle() {
+            const calc = document.getElementById('prediction-calculator');
+            const isMotd = document.getElementById('input-is-motd').checked;
+            if (isMotd) {
+                calc.classList.add('is-motd-active');
+            } else {
+                calc.classList.remove('is-motd-active');
+            }
+        }
+
+        function validateSum1X2() {
+            const homeVal = parseFloat(document.getElementById('input-win-home').value) || 0;
+            const drawVal = parseFloat(document.getElementById('input-win-draw').value) || 0;
+            const awayVal = parseFloat(document.getElementById('input-win-away').value) || 0;
+            const err = document.getElementById('calc-error-1x2');
+            
+            if (homeVal + drawVal + awayVal === 0) {
+                err.style.display = 'block';
+                return false;
+            } else {
+                err.style.display = 'none';
+                return true;
+            }
+        }
+
+        // --- MATH FUNCTIONS ---
+        function factorial(n) {
+            let res = 1;
+            for (let i = 2; i <= n; i++) res *= i;
+            return res;
+        }
+
+        function poisson(lam, k) {
+            return Math.exp(-lam) * Math.pow(lam, k) / factorial(k);
+        }
+
+        function dixonColesTau(h, a, lam_h, lam_a, rho) {
+            if (h === 0 && a === 0) {
+                return 1.0 - lam_h * lam_a * rho;
+            } else if (h === 1 && a === 0) {
+                return 1.0 + lam_a * rho;
+            } else if (h === 0 && a === 1) {
+                return 1.0 + lam_h * rho;
+            } else if (h === 1 && a === 1) {
+                return 1.0 - rho;
+            } else {
+                return 1.0;
+            }
+        }
+
+        function calcMatrix(lam_h, lam_a, rho = 0.0) {
+            let matrix = [];
+            let totaal = 0.0;
+            for (let h = 0; h < 10; h++) {
+                matrix[h] = [];
+                for (let a = 0; a < 10; a++) {
+                    let prob = poisson(lam_h, h) * poisson(lam_a, a) * dixonColesTau(h, a, lam_h, lam_a, rho);
+                    prob = Math.max(0.0, prob);
+                    matrix[h][a] = prob;
+                    totaal += prob;
+                }
+            }
+            if (totaal > 0.0) {
+                for (let h = 0; h < 10; h++) {
+                    for (let a = 0; a < 10; a++) {
+                        matrix[h][a] /= totaal;
+                    }
+                }
+            }
+            return matrix;
+        }
+
+        // --- REPLICATED DIXON-COLES OBJECTIVE FUNCTION ---
+        function objective(params, target_h, target_d, target_a, target_ou_home, target_ou_away) {
+            let lam_h = Math.max(0.05, Math.min(params[0], 5.0));
+            let lam_a = Math.max(0.05, Math.min(params[1], 5.0));
+            let rho = Math.max(-0.25, Math.min(params[2], 0.10));
+            
+            let matrix = calcMatrix(lam_h, lam_a, rho);
+            let [h, d, a] = get1X2(matrix);
+            let error = Math.pow(h - target_h, 2) + Math.pow(d - target_d, 2) + Math.pow(a - target_a, 2);
+            
+            if (target_ou_home) {
+                let line = target_ou_home.line;
+                let t_u = target_ou_home.under;
+                let t_o = target_ou_home.over;
+                
+                let u = 0.0;
+                let o = 0.0;
+                for (let sc_h = 0; sc_h < 10; sc_h++) {
+                    for (let sc_a = 0; sc_a < 10; sc_a++) {
+                        if (sc_h < line) u += matrix[sc_h][sc_a];
+                        if (sc_h > line) o += matrix[sc_h][sc_a];
+                    }
+                }
+                error += (Math.pow(u - t_u, 2) + Math.pow(o - t_o, 2)) * 0.8;
+            }
+            
+            if (target_ou_away) {
+                let line = target_ou_away.line;
+                let t_u = target_ou_away.under;
+                let t_o = target_ou_away.over;
+                
+                let u = 0.0;
+                let o = 0.0;
+                for (let sc_h = 0; sc_h < 10; sc_h++) {
+                    for (let sc_a = 0; sc_a < 10; sc_a++) {
+                        if (sc_a < line) u += matrix[sc_h][sc_a];
+                        if (sc_a > line) o += matrix[sc_h][sc_a];
+                    }
+                }
+                error += (Math.pow(u - t_u, 2) + Math.pow(o - t_o, 2)) * 0.8;
+            }
+            
+            return error;
+        }
+
+        function get1X2(matrix) {
+            let h_win = 0.0;
+            let draw = 0.0;
+            let a_win = 0.0;
+            for (let h = 0; h < 10; h++) {
+                for (let a = 0; a < 10; a++) {
+                    let p = matrix[h][a];
+                    if (h > a) h_win += p;
+                    else if (h === a) draw += p;
+                    else a_win += p;
+                }
+            }
+            return [h_win, draw, a_win];
+        }
+
+        // --- NELDER-MEAD OPTIMIZATION ---
+        function nelderMead(target_h, target_d, target_a, target_ou_home, target_ou_away) {
+            let start = [1.3, 1.0, -0.05];
+            
+            let simplex = [
+                [start[0], start[1], start[2]],
+                [start[0] + 0.05 * start[0], start[1], start[2]],
+                [start[0], start[1] + 0.05 * start[1], start[2]],
+                [start[0], start[1], start[2] + 0.05 * start[2]]
+            ];
+            
+            let evalFunc = (p) => objective(p, target_h, target_d, target_a, target_ou_home, target_ou_away);
+            let values = simplex.map(p => evalFunc(p));
+            
+            const maxIterations = 1000;
+            const tolerance = 1e-15;
+            
+            const alpha = 1.0;
+            const gamma = 2.0;
+            const beta = 0.5;
+            const sigma = 0.5;
+            
+            const clip = (p) => {
+                return [
+                    Math.max(0.05, Math.min(p[0], 5.0)),
+                    Math.max(0.05, Math.min(p[1], 5.0)),
+                    Math.max(-0.25, Math.min(p[2], 0.10))
+                ];
+            };
+            
+            for (let i = 0; i < 4; i++) {
+                simplex[i] = clip(simplex[i]);
+                values[i] = evalFunc(simplex[i]);
+            }
+            
+            for (let iter = 0; iter < maxIterations; iter++) {
+                let indices = [0, 1, 2, 3];
+                indices.sort((x, y) => values[x] - values[y]);
+                
+                simplex = indices.map(idx => simplex[idx]);
+                values = indices.map(idx => values[idx]);
+                
+                if (values[3] - values[0] < tolerance) {
+                    break;
+                }
+                
+                let centroid = [0, 0, 0];
+                for (let j = 0; j < 3; j++) {
+                    centroid[0] += simplex[j][0];
+                    centroid[1] += simplex[j][1];
+                    centroid[2] += simplex[j][2];
+                }
+                centroid[0] /= 3;
+                centroid[1] /= 3;
+                centroid[2] /= 3;
+                
+                let reflected = [
+                    centroid[0] + alpha * (centroid[0] - simplex[3][0]),
+                    centroid[1] + alpha * (centroid[1] - simplex[3][1]),
+                    centroid[2] + alpha * (centroid[2] - simplex[3][2])
+                ];
+                reflected = clip(reflected);
+                let fReflected = evalFunc(reflected);
+                
+                if (fReflected < values[1] && fReflected >= values[0]) {
+                    simplex[3] = reflected;
+                    values[3] = fReflected;
+                    continue;
+                }
+                
+                if (fReflected < values[0]) {
+                    let expanded = [
+                        centroid[0] + gamma * (reflected[0] - centroid[0]),
+                        centroid[1] + gamma * (reflected[1] - centroid[1]),
+                        centroid[2] + gamma * (reflected[2] - centroid[2])
+                    ];
+                    expanded = clip(expanded);
+                    let fExpanded = evalFunc(expanded);
+                    
+                    if (fExpanded < fReflected) {
+                        simplex[3] = expanded;
+                        values[3] = fExpanded;
+                    } else {
+                        simplex[3] = reflected;
+                        values[3] = fReflected;
+                    }
+                    continue;
+                }
+                
+                if (fReflected >= values[1]) {
+                    let contracted;
+                    if (fReflected < values[3]) {
+                        contracted = [
+                            centroid[0] + beta * (reflected[0] - centroid[0]),
+                            centroid[1] + beta * (reflected[1] - centroid[1]),
+                            centroid[2] + beta * (reflected[2] - centroid[2])
+                        ];
+                        contracted = clip(contracted);
+                        let fContracted = evalFunc(contracted);
+                        if (fContracted <= fReflected) {
+                            simplex[3] = contracted;
+                            values[3] = fContracted;
+                            continue;
+                        }
+                    } else {
+                        contracted = [
+                            centroid[0] + beta * (simplex[3][0] - centroid[0]),
+                            centroid[1] + beta * (simplex[3][1] - centroid[1]),
+                            centroid[2] + beta * (simplex[3][2] - centroid[2])
+                        ];
+                        contracted = clip(contracted);
+                        let fContracted = evalFunc(contracted);
+                        if (fContracted < values[3]) {
+                            simplex[3] = contracted;
+                            values[3] = fContracted;
+                            continue;
+                        }
+                    }
+                }
+                
+                for (let i = 1; i < 4; i++) {
+                    simplex[i] = [
+                        simplex[0][0] + sigma * (simplex[i][0] - simplex[0][0]),
+                        simplex[0][1] + sigma * (simplex[i][1] - simplex[0][1]),
+                        simplex[0][2] + sigma * (simplex[i][2] - simplex[0][2])
+                    ];
+                    simplex[i] = clip(simplex[i]);
+                    values[i] = evalFunc(simplex[i]);
+                }
+            }
+            
+            let indices = [0, 1, 2, 3];
+            indices.sort((x, y) => values[x] - values[y]);
+            return clip(simplex[indices[0]]);
+        }
+
+        // --- EXPECTED VALUE & PREDICTION CALCULATIONS ---
+        function calcEvRegular(pred_h, pred_a, matrix) {
+            let ev = 0.0;
+            for (let act_h = 0; act_h < 10; act_h++) {
+                for (let act_a = 0; act_a < 10; act_a++) {
+                    let prob = matrix[act_h][act_a];
+                    let pts = 0;
+                    if (pred_h === act_h && pred_a === act_a) {
+                        pts += 10;
+                    } else {
+                        let pred_toto = pred_h > pred_a ? 1 : (pred_h < pred_a ? -1 : 0);
+                        let act_toto = act_h > act_a ? 1 : (act_h < act_a ? -1 : 0);
+                        if (pred_toto === act_toto) {
+                            if (pred_toto === 0) {
+                                pts += 7;
+                            } else {
+                                pts += 5;
+                            }
+                        }
+                        if (pred_h === act_h) pts += 2;
+                        if (pred_a === act_a) pts += 2;
+                    }
+                    ev += prob * pts;
+                }
+            }
+            return ev;
+        }
+
+        function calcEvMotd(pred_h, pred_a, matrix) {
+            let pred_scorer_h = (pred_h > 0);
+            let pred_scorer_a = (pred_a > 0);
+            let ev = 0.0;
+            
+            for (let act_h = 0; act_h < 10; act_h++) {
+                for (let act_a = 0; act_a < 10; act_a++) {
+                    let prob = matrix[act_h][act_a];
+                    let pts = 0;
+                    
+                    if (pred_h === act_h && pred_a === act_a) {
+                        pts += 12;
+                    } else {
+                        let pred_toto = pred_h > pred_a ? 1 : (pred_h < pred_a ? -1 : 0);
+                        let act_toto = act_h > act_a ? 1 : (act_h < act_a ? -1 : 0);
+                        if (pred_toto === act_toto) {
+                            if (pred_toto === 0) {
+                                pts += 8;
+                            } else {
+                                pts += 6;
+                            }
+                        }
+                        if (pred_h === act_h) pts += 2;
+                        if (pred_a === act_a) pts += 2;
+                    }
+                    
+                    if (!pred_scorer_h) {
+                        if (act_h === 0) pts += 4;
+                    } else {
+                        if (act_h > 0) pts += 4 * 0.35;
+                    }
+                    
+                    if (!pred_scorer_a) {
+                        if (act_a === 0) pts += 4;
+                    } else {
+                        if (act_a > 0) pts += 4 * 0.35;
+                    }
+                    
+                    ev += prob * pts;
+                }
+            }
+            return [ev, [pred_scorer_h, pred_scorer_a]];
+        }
+
+        function calculatePrediction() {
+            if (!validateSum1X2()) return;
+            
+            const btnText = document.getElementById('calc-btn-text');
+            const spinner = document.getElementById('calc-spinner');
+            const resultsWrapper = document.getElementById('results-wrapper');
+            
+            btnText.style.display = 'none';
+            spinner.style.display = 'inline-block';
+            
+            setTimeout(() => {
+                let homePct = parseFloat(document.getElementById('input-win-home').value) || 0;
+                let drawPct = parseFloat(document.getElementById('input-win-draw').value) || 0;
+                let awayPct = parseFloat(document.getElementById('input-win-away').value) || 0;
+                
+                let isMotd = document.getElementById('input-is-motd').checked;
+                
+                let sum = homePct + drawPct + awayPct;
+                let target_h = homePct / sum;
+                let target_d = drawPct / sum;
+                let target_a = awayPct / sum;
+                
+                let target_ou_home = null;
+                let homeUnder = document.getElementById('ou-home-under').value;
+                let homeOver = document.getElementById('ou-home-over').value;
+                if (homeUnder !== "" && homeOver !== "") {
+                    let u_v = parseFloat(homeUnder) || 0;
+                    let o_v = parseFloat(homeOver) || 0;
+                    let tot = u_v + o_v;
+                    if (tot > 0) {
+                        target_ou_home = {
+                            line: parseFloat(document.getElementById('ou-home-line').value),
+                            under: u_v / tot,
+                            over: o_v / tot
+                        };
+                    }
+                }
+                
+                let target_ou_away = null;
+                let awayUnder = document.getElementById('ou-away-under').value;
+                let awayOver = document.getElementById('ou-away-over').value;
+                if (awayUnder !== "" && awayOver !== "") {
+                    let u_v = parseFloat(awayUnder) || 0;
+                    let o_v = parseFloat(awayOver) || 0;
+                    let tot = u_v + o_v;
+                    if (tot > 0) {
+                        target_ou_away = {
+                            line: parseFloat(document.getElementById('ou-away-line').value),
+                            under: u_v / tot,
+                            over: o_v / tot
+                        };
+                    }
+                }
+                
+                let [lam_h, lam_a, rho] = nelderMead(target_h, target_d, target_a, target_ou_home, target_ou_away);
+                let matrix = calcMatrix(lam_h, lam_a, rho);
+                
+                let best_ev = -1.0;
+                let best_pred = [0, 0];
+                let best_scorers = [false, false];
+                
+                for (let h = 0; h <= 6; h++) {
+                    for (let a = 0; a <= 6; a++) {
+                        let ev;
+                        let scorers = [false, false];
+                        if (isMotd) {
+                            let res = calcEvMotd(h, a, matrix);
+                            ev = res[0];
+                            scorers = res[1];
+                        } else {
+                            ev = calcEvRegular(h, a, matrix);
+                        }
+                        
+                        if (ev > best_ev) {
+                            best_ev = ev;
+                            best_pred = [h, a];
+                            best_scorers = scorers;
+                        }
+                    }
+                }
+                
+                document.getElementById('result-score').innerText = `${best_pred[0]}-${best_pred[1]}`;
+                document.getElementById('result-ev').innerText = `${best_ev.toFixed(2)} pts`;
+                document.getElementById('result-xg').innerText = `xG Thuis: ${lam_h.toFixed(2)} | xG Uit: ${lam_a.toFixed(2)} (ρ: ${rho.toFixed(2)})`;
+                
+                const scorerDiv = document.getElementById('result-scorer-tips');
+                if (isMotd) {
+                    document.getElementById('result-scorer-home').innerText = best_scorers[0] ? "Spits (of penaltynemer)" : "Geen score";
+                    document.getElementById('result-scorer-away').innerText = best_scorers[1] ? "Spits (of penaltynemer)" : "Geen score";
+                    scorerDiv.style.display = 'flex';
+                } else {
+                    scorerDiv.style.display = 'none';
+                }
+                
+                spinner.style.display = 'none';
+                btnText.style.display = 'inline-block';
+                resultsWrapper.style.display = 'flex';
+                resultsWrapper.offsetHeight;
+                resultsWrapper.classList.add('visible');
+            }, 400);
+        }
+    </script>
     <footer style="margin-top: 40px; margin-bottom: 20px; font-size: 0.8rem; color: var(--text-secondary); text-align: center;">
         <p>Berekend met de Voetbalpoules Polymarket Voorspeller. Data ververst dagelijks om 17:00 CEST.</p>
     </footer>
