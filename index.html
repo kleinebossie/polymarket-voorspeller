@@ -695,6 +695,72 @@
             to { transform: rotate(360deg); }
         }
         
+        /* Top 5 predictions table */
+        .top-predictions-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 6px;
+            font-size: 0.82rem;
+        }
+        
+        .top-predictions-table th, .top-predictions-table td {
+            padding: 6px 8px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        
+        .top-predictions-table th {
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.05em;
+        }
+        
+        .top-predictions-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .top-predictions-table tr.rank-1 td {
+            color: var(--accent-green);
+        }
+        
+        .top-predictions-table tr.rank-1 {
+            background: rgba(16, 185, 129, 0.08);
+            font-weight: 600;
+        }
+        
+        .is-motd .top-predictions-table tr.rank-1 td,
+        .is-motd-active .top-predictions-table tr.rank-1 td {
+            color: var(--accent-yellow);
+        }
+        
+        .is-motd .top-predictions-table tr.rank-1,
+        .is-motd-active .top-predictions-table tr.rank-1 {
+            background: rgba(245, 158, 11, 0.08);
+        }
+        
+        .badge-rank {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+        }
+        
+        .rank-1 .badge-rank {
+            background: var(--accent-green);
+            color: var(--bg-color);
+        }
+        
+        .is-motd .rank-1 .badge-rank,
+        .is-motd-active .rank-1 .badge-rank {
+            background: var(--accent-yellow);
+            color: var(--bg-color);
+        }
+        
         @media (max-width: 480px) {
             .ou-container {
                 grid-template-columns: 1fr;
@@ -706,7 +772,7 @@
     <header>
         <h1>🏆 WK 2026 Voorspeller</h1>
         <div class="subtitle">Wiskundig optimale uitslagen berekend op basis van live winstkansen van Polymarket data.</div>
-        <div class="last-updated">Geüpdatet: 17-06-2026 07:14 CEST</div>
+        <div class="last-updated">Geüpdatet: 17-06-2026 09:21 CEST</div>
     </header>
     
     <div class="container">
@@ -852,6 +918,10 @@
                         <span class="calc-results-score" id="result-score">0-0</span>
                     </div>
                     
+                    <div id="calc-top-5-container" style="margin-top: 8px;">
+                        <!-- Hier komt de top 5 tabel dynamically -->
+                    </div>
+                    
                     <div class="scorer-tips" id="result-scorer-tips" style="display: none;">
                         <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
                         <div class="scorer-row">
@@ -867,38 +937,6 @@
             </div>
         </div>
 
-        <div class="match-card ">
-            <div class="match-header">
-                <span>📅 2026-06-17 06:00</span>
-                
-            </div>
-            <div class="match-teams">
-                <span class="team home">Austria</span>
-                <span class="vs-text">VS</span>
-                <span class="team away">Jordan</span>
-            </div>
-            <div class="match-details">
-                <div class="detail-item">
-                    <span class="detail-label">Odds (1/X/2)</span>
-                    <span class="detail-value">84% / 14% / 4%</span>
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">xG (Verwacht)</span>
-                    <span class="detail-value">2.42 - 0.35 (ρ: -0.05)</span>
-                </div>
-                
-                
-                <div class="prediction-box">
-                    <div class="detail-item">
-                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
-                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">6.28 pts</strong></span>
-                    </div>
-                    <span class="pred-score">2-0</span>
-                </div>
-        
-            </div>
-        </div>
-        
         <div class="match-card ">
             <div class="match-header">
                 <span>📅 2026-06-17 19:00</span>
@@ -927,6 +965,46 @@
                     </div>
                     <span class="pred-score">2-0</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>2-0</strong></td>
+                <td>15.3%</td>
+                <td style="text-align: right;">5.58 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>1-0</strong></td>
+                <td>13.3%</td>
+                <td style="text-align: right;">5.51 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>3-0</strong></td>
+                <td>11.3%</td>
+                <td style="text-align: right;">5.41 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>4-0</strong></td>
+                <td>6.3%</td>
+                <td style="text-align: right;">5.18 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>5-0</strong></td>
+                <td>2.8%</td>
+                <td style="text-align: right;">5.02 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -948,16 +1026,56 @@
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">xG (Verwacht)</span>
-                    <span class="detail-value">1.67 - 0.85 (ρ: -0.05)</span>
+                    <span class="detail-value">1.64 - 0.80 (ρ: -0.05)</span>
                 </div>
                 
                 
                 <div class="prediction-box">
                     <div class="detail-item">
                         <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
-                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">7.97 pts</strong></span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">8.14 pts</strong></span>
                     </div>
                     <span class="pred-score">1-0</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>1-0</strong></td>
+                <td>13.7%</td>
+                <td style="text-align: right;">8.14 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>2-0</strong></td>
+                <td>11.7%</td>
+                <td style="text-align: right;">7.98 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>3-0</strong></td>
+                <td>6.4%</td>
+                <td style="text-align: right;">7.64 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>4-0</strong></td>
+                <td>2.6%</td>
+                <td style="text-align: right;">7.40 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>5-0</strong></td>
+                <td>0.9%</td>
+                <td style="text-align: right;">7.28 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
                 <div class="scorer-tips">
@@ -988,20 +1106,60 @@
             <div class="match-details">
                 <div class="detail-item">
                     <span class="detail-label">Odds (1/X/2)</span>
-                    <span class="detail-value">42% / 30% / 28%</span>
+                    <span class="detail-value">42% / 30% / 30%</span>
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">xG (Verwacht)</span>
-                    <span class="detail-value">1.27 - 1.00 (ρ: -0.05)</span>
+                    <span class="detail-value">1.28 - 1.04 (ρ: -0.05)</span>
                 </div>
                 
                 
                 <div class="prediction-box">
                     <div class="detail-item">
                         <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
-                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">3.66 pts</strong></span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">3.61 pts</strong></span>
                     </div>
                     <span class="pred-score">1-0</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>1-0</strong></td>
+                <td>12.0%</td>
+                <td style="text-align: right;">3.61 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>1-1</strong></td>
+                <td>13.8%</td>
+                <td style="text-align: right;">3.36 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>2-1</strong></td>
+                <td>8.4%</td>
+                <td style="text-align: right;">3.34 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>2-0</strong></td>
+                <td>8.1%</td>
+                <td style="text-align: right;">3.31 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>0-0</strong></td>
+                <td>10.6%</td>
+                <td style="text-align: right;">3.22 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
             </div>
@@ -1020,11 +1178,11 @@
             <div class="match-details">
                 <div class="detail-item">
                     <span class="detail-label">Odds (1/X/2)</span>
-                    <span class="detail-value">10% / 20% / 72%</span>
+                    <span class="detail-value">10% / 20% / 70%</span>
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">xG (Verwacht)</span>
-                    <span class="detail-value">0.62 - 2.08 (ρ: -0.05)</span>
+                    <span class="detail-value">0.61 - 2.05 (ρ: -0.04)</span>
                 </div>
                 
                 
@@ -1034,6 +1192,46 @@
                         <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">5.32 pts</strong></span>
                     </div>
                     <span class="pred-score">0-2</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>0-2</strong></td>
+                <td>14.7%</td>
+                <td style="text-align: right;">5.32 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>0-1</strong></td>
+                <td>14.0%</td>
+                <td style="text-align: right;">5.30 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>0-3</strong></td>
+                <td>10.0%</td>
+                <td style="text-align: right;">5.10 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>0-4</strong></td>
+                <td>5.1%</td>
+                <td style="text-align: right;">4.87 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>1-2</strong></td>
+                <td>9.0%</td>
+                <td style="text-align: right;">4.84 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
             </div>
@@ -1067,6 +1265,46 @@
                     </div>
                     <span class="pred-score">1-0</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>1-0</strong></td>
+                <td>11.7%</td>
+                <td style="text-align: right;">4.24 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>2-0</strong></td>
+                <td>10.3%</td>
+                <td style="text-align: right;">4.12 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>2-1</strong></td>
+                <td>9.6%</td>
+                <td style="text-align: right;">4.07 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>3-0</strong></td>
+                <td>5.8%</td>
+                <td style="text-align: right;">3.85 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>3-1</strong></td>
+                <td>5.4%</td>
+                <td style="text-align: right;">3.79 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -1098,6 +1336,46 @@
                         <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">4.80 pts</strong></span>
                     </div>
                     <span class="pred-score">1-0</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>1-0</strong></td>
+                <td>13.9%</td>
+                <td style="text-align: right;">4.80 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>2-0</strong></td>
+                <td>12.8%</td>
+                <td style="text-align: right;">4.73 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>3-0</strong></td>
+                <td>7.7%</td>
+                <td style="text-align: right;">4.46 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>2-1</strong></td>
+                <td>9.4%</td>
+                <td style="text-align: right;">4.44 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>4-0</strong></td>
+                <td>3.4%</td>
+                <td style="text-align: right;">4.25 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
             </div>
@@ -1131,6 +1409,46 @@
                     </div>
                     <span class="pred-score">2-0</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>2-0</strong></td>
+                <td>13.0%</td>
+                <td style="text-align: right;">5.41 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>1-0</strong></td>
+                <td>10.4%</td>
+                <td style="text-align: right;">5.29 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>3-0</strong></td>
+                <td>10.5%</td>
+                <td style="text-align: right;">5.28 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>4-0</strong></td>
+                <td>6.3%</td>
+                <td style="text-align: right;">5.07 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>2-1</strong></td>
+                <td>9.0%</td>
+                <td style="text-align: right;">5.06 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -1163,6 +1481,46 @@
                     </div>
                     <span class="pred-score">1-0</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>1-0</strong></td>
+                <td>12.8%</td>
+                <td style="text-align: right;">3.98 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>2-0</strong></td>
+                <td>9.6%</td>
+                <td style="text-align: right;">3.76 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>2-1</strong></td>
+                <td>9.0%</td>
+                <td style="text-align: right;">3.70 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>3-0</strong></td>
+                <td>4.6%</td>
+                <td style="text-align: right;">3.45 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>3-1</strong></td>
+                <td>4.3%</td>
+                <td style="text-align: right;">3.40 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -1184,16 +1542,56 @@
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">xG (Verwacht)</span>
-                    <span class="detail-value">1.99 - 0.96 (ρ: -0.01)</span>
+                    <span class="detail-value">2.13 - 1.09 (ρ: -0.05)</span>
                 </div>
                 
                 
                 <div class="prediction-box">
                     <div class="detail-item">
                         <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
-                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">7.92 pts</strong></span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">7.60 pts</strong></span>
                     </div>
-                    <span class="pred-score">1-0</span>
+                    <span class="pred-score">2-0</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>2-0</strong></td>
+                <td>9.0%</td>
+                <td style="text-align: right;">7.60 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>1-0</strong></td>
+                <td>8.0%</td>
+                <td style="text-align: right;">7.55 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>3-0</strong></td>
+                <td>6.4%</td>
+                <td style="text-align: right;">7.39 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>2-1</strong></td>
+                <td>9.9%</td>
+                <td style="text-align: right;">7.27 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>4-0</strong></td>
+                <td>3.4%</td>
+                <td style="text-align: right;">7.15 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
                 <div class="scorer-tips">
@@ -1239,6 +1637,46 @@
                     </div>
                     <span class="pred-score">0-1</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>0-1</strong></td>
+                <td>14.7%</td>
+                <td style="text-align: right;">4.55 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>0-2</strong></td>
+                <td>12.0%</td>
+                <td style="text-align: right;">4.38 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>1-2</strong></td>
+                <td>9.1%</td>
+                <td style="text-align: right;">4.13 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>0-3</strong></td>
+                <td>6.3%</td>
+                <td style="text-align: right;">4.08 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>0-4</strong></td>
+                <td>2.5%</td>
+                <td style="text-align: right;">3.88 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -1270,6 +1708,46 @@
                         <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">5.74 pts</strong></span>
                     </div>
                     <span class="pred-score">3-0</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>3-0</strong></td>
+                <td>8.7%</td>
+                <td style="text-align: right;">5.74 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>4-0</strong></td>
+                <td>8.3%</td>
+                <td style="text-align: right;">5.72 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>2-0</strong></td>
+                <td>6.8%</td>
+                <td style="text-align: right;">5.64 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>3-1</strong></td>
+                <td>7.5%</td>
+                <td style="text-align: right;">5.61 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>5-0</strong></td>
+                <td>6.3%</td>
+                <td style="text-align: right;">5.61 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
             </div>
@@ -1303,6 +1781,46 @@
                     </div>
                     <span class="pred-score">1-0</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>1-0</strong></td>
+                <td>12.9%</td>
+                <td style="text-align: right;">3.97 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>2-0</strong></td>
+                <td>9.5%</td>
+                <td style="text-align: right;">3.73 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>2-1</strong></td>
+                <td>8.9%</td>
+                <td style="text-align: right;">3.67 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>3-0</strong></td>
+                <td>4.5%</td>
+                <td style="text-align: right;">3.42 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>3-1</strong></td>
+                <td>4.2%</td>
+                <td style="text-align: right;">3.37 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -1334,6 +1852,46 @@
                         <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">7.73 pts</strong></span>
                     </div>
                     <span class="pred-score">1-0</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>1-0</strong></td>
+                <td>11.2%</td>
+                <td style="text-align: right;">7.73 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>2-0</strong></td>
+                <td>10.4%</td>
+                <td style="text-align: right;">7.64 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>3-0</strong></td>
+                <td>6.2%</td>
+                <td style="text-align: right;">7.34 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>4-0</strong></td>
+                <td>2.8%</td>
+                <td style="text-align: right;">7.10 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>5-0</strong></td>
+                <td>1.0%</td>
+                <td style="text-align: right;">6.97 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
                 <div class="scorer-tips">
@@ -1379,6 +1937,46 @@
                     </div>
                     <span class="pred-score">2-0</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>2-0</strong></td>
+                <td>9.9%</td>
+                <td style="text-align: right;">4.54 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>2-1</strong></td>
+                <td>9.9%</td>
+                <td style="text-align: right;">4.53 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>1-0</strong></td>
+                <td>9.1%</td>
+                <td style="text-align: right;">4.49 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>3-0</strong></td>
+                <td>7.1%</td>
+                <td style="text-align: right;">4.35 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>3-1</strong></td>
+                <td>7.1%</td>
+                <td style="text-align: right;">4.35 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -1410,6 +2008,46 @@
                         <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">7.15 pts</strong></span>
                     </div>
                     <span class="pred-score">2-0</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>2-0</strong></td>
+                <td>25.1%</td>
+                <td style="text-align: right;">7.15 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>1-0</strong></td>
+                <td>21.6%</td>
+                <td style="text-align: right;">7.04 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>3-0</strong></td>
+                <td>19.5%</td>
+                <td style="text-align: right;">6.97 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>4-0</strong></td>
+                <td>11.4%</td>
+                <td style="text-align: right;">6.72 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>5-0</strong></td>
+                <td>5.3%</td>
+                <td style="text-align: right;">6.53 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
             </div>
@@ -1443,6 +2081,46 @@
                     </div>
                     <span class="pred-score">0-1</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>0-1</strong></td>
+                <td>17.0%</td>
+                <td style="text-align: right;">5.10 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>0-2</strong></td>
+                <td>14.6%</td>
+                <td style="text-align: right;">4.99 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>0-3</strong></td>
+                <td>8.3%</td>
+                <td style="text-align: right;">4.69 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>1-2</strong></td>
+                <td>8.7%</td>
+                <td style="text-align: right;">4.48 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>0-4</strong></td>
+                <td>3.5%</td>
+                <td style="text-align: right;">4.48 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -1474,6 +2152,46 @@
                         <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">5.76 pts</strong></span>
                     </div>
                     <span class="pred-score">3-0</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>3-0</strong></td>
+                <td>9.2%</td>
+                <td style="text-align: right;">5.76 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>4-0</strong></td>
+                <td>8.5%</td>
+                <td style="text-align: right;">5.73 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>2-0</strong></td>
+                <td>7.4%</td>
+                <td style="text-align: right;">5.66 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>5-0</strong></td>
+                <td>6.4%</td>
+                <td style="text-align: right;">5.61 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>3-1</strong></td>
+                <td>7.5%</td>
+                <td style="text-align: right;">5.59 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
             </div>
@@ -1507,6 +2225,46 @@
                     </div>
                     <span class="pred-score">2-0</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>2-0</strong></td>
+                <td>13.3%</td>
+                <td style="text-align: right;">5.06 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>1-0</strong></td>
+                <td>12.6%</td>
+                <td style="text-align: right;">5.04 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>3-0</strong></td>
+                <td>9.1%</td>
+                <td style="text-align: right;">4.85 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>2-1</strong></td>
+                <td>9.4%</td>
+                <td style="text-align: right;">4.74 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>4-0</strong></td>
+                <td>4.6%</td>
+                <td style="text-align: right;">4.63 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -1538,6 +2296,46 @@
                         <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">5.13 pts</strong></span>
                     </div>
                     <span class="pred-score">1-0</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>1-0</strong></td>
+                <td>15.5%</td>
+                <td style="text-align: right;">5.13 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>2-0</strong></td>
+                <td>14.5%</td>
+                <td style="text-align: right;">5.07 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>3-0</strong></td>
+                <td>8.8%</td>
+                <td style="text-align: right;">4.81 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>2-1</strong></td>
+                <td>8.9%</td>
+                <td style="text-align: right;">4.60 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>4-0</strong></td>
+                <td>4.0%</td>
+                <td style="text-align: right;">4.58 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
             </div>
@@ -1571,6 +2369,46 @@
                     </div>
                     <span class="pred-score">0-1</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>0-1</strong></td>
+                <td>12.7%</td>
+                <td style="text-align: right;">8.23 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>0-2</strong></td>
+                <td>11.7%</td>
+                <td style="text-align: right;">8.15 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>0-3</strong></td>
+                <td>7.0%</td>
+                <td style="text-align: right;">7.84 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>0-4</strong></td>
+                <td>3.1%</td>
+                <td style="text-align: right;">7.59 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>0-5</strong></td>
+                <td>1.1%</td>
+                <td style="text-align: right;">7.45 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
                 <div class="scorer-tips">
                     <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
@@ -1600,20 +2438,60 @@
             <div class="match-details">
                 <div class="detail-item">
                     <span class="detail-label">Odds (1/X/2)</span>
-                    <span class="detail-value">62% / 24% / 16%</span>
+                    <span class="detail-value">64% / 24% / 14%</span>
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">xG (Verwacht)</span>
-                    <span class="detail-value">1.87 - 0.83 (ρ: -0.07)</span>
+                    <span class="detail-value">1.81 - 0.74 (ρ: -0.04)</span>
                 </div>
                 
                 
                 <div class="prediction-box">
                     <div class="detail-item">
                         <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
-                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">4.63 pts</strong></span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">4.81 pts</strong></span>
                     </div>
                     <span class="pred-score">1-0</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>1-0</strong></td>
+                <td>13.7%</td>
+                <td style="text-align: right;">4.81 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>2-0</strong></td>
+                <td>12.8%</td>
+                <td style="text-align: right;">4.75 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>3-0</strong></td>
+                <td>7.7%</td>
+                <td style="text-align: right;">4.49 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>2-1</strong></td>
+                <td>9.5%</td>
+                <td style="text-align: right;">4.46 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>4-0</strong></td>
+                <td>3.5%</td>
+                <td style="text-align: right;">4.27 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
             </div>
@@ -1636,16 +2514,56 @@
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">xG (Verwacht)</span>
-                    <span class="detail-value">2.99 - 0.46 (ρ: -0.01)</span>
+                    <span class="detail-value">2.27 - 0.05 (ρ: 0.10)</span>
                 </div>
                 
                 
                 <div class="prediction-box">
                     <div class="detail-item">
                         <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
-                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">6.22 pts</strong></span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">7.12 pts</strong></span>
                     </div>
                     <span class="pred-score">2-0</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>2-0</strong></td>
+                <td>25.3%</td>
+                <td style="text-align: right;">7.12 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>1-0</strong></td>
+                <td>22.4%</td>
+                <td style="text-align: right;">7.03 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>3-0</strong></td>
+                <td>19.2%</td>
+                <td style="text-align: right;">6.93 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>4-0</strong></td>
+                <td>10.9%</td>
+                <td style="text-align: right;">6.67 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>5-0</strong></td>
+                <td>4.9%</td>
+                <td style="text-align: right;">6.48 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
             </div>
@@ -1679,6 +2597,46 @@
                     </div>
                     <span class="pred-score">1-0</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>1-0</strong></td>
+                <td>10.1%</td>
+                <td style="text-align: right;">3.47 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>2-1</strong></td>
+                <td>8.7%</td>
+                <td style="text-align: right;">3.36 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>2-0</strong></td>
+                <td>7.4%</td>
+                <td style="text-align: right;">3.23 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>1-1</strong></td>
+                <td>13.0%</td>
+                <td style="text-align: right;">3.20 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>3-1</strong></td>
+                <td>4.1%</td>
+                <td style="text-align: right;">3.05 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -1696,20 +2654,60 @@
             <div class="match-details">
                 <div class="detail-item">
                     <span class="detail-label">Odds (1/X/2)</span>
-                    <span class="detail-value">14% / 22% / 64%</span>
+                    <span class="detail-value">14% / 24% / 62%</span>
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">xG (Verwacht)</span>
-                    <span class="detail-value">0.74 - 1.87 (ρ: -0.05)</span>
+                    <span class="detail-value">0.77 - 1.83 (ρ: -0.07)</span>
                 </div>
                 
                 
                 <div class="prediction-box">
                     <div class="detail-item">
                         <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
-                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">8.73 pts</strong></span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">8.49 pts</strong></span>
                     </div>
                     <span class="pred-score">0-1</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>0-1</strong></td>
+                <td>12.8%</td>
+                <td style="text-align: right;">8.49 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>0-2</strong></td>
+                <td>12.4%</td>
+                <td style="text-align: right;">8.44 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>0-3</strong></td>
+                <td>7.6%</td>
+                <td style="text-align: right;">8.13 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>0-4</strong></td>
+                <td>3.5%</td>
+                <td style="text-align: right;">7.87 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>0-5</strong></td>
+                <td>1.3%</td>
+                <td style="text-align: right;">7.73 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
                 <div class="scorer-tips">
@@ -1755,6 +2753,46 @@
                     </div>
                     <span class="pred-score">2-0</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>2-0</strong></td>
+                <td>10.9%</td>
+                <td style="text-align: right;">5.46 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>3-0</strong></td>
+                <td>10.2%</td>
+                <td style="text-align: right;">5.42 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>1-0</strong></td>
+                <td>7.6%</td>
+                <td style="text-align: right;">5.29 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>4-0</strong></td>
+                <td>7.2%</td>
+                <td style="text-align: right;">5.26 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>2-1</strong></td>
+                <td>8.5%</td>
+                <td style="text-align: right;">5.23 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -1787,6 +2825,46 @@
                     </div>
                     <span class="pred-score">2-0</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>2-0</strong></td>
+                <td>11.4%</td>
+                <td style="text-align: right;">5.23 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>3-0</strong></td>
+                <td>9.6%</td>
+                <td style="text-align: right;">5.13 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>1-0</strong></td>
+                <td>8.7%</td>
+                <td style="text-align: right;">5.10 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>2-1</strong></td>
+                <td>9.2%</td>
+                <td style="text-align: right;">5.03 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>3-1</strong></td>
+                <td>7.7%</td>
+                <td style="text-align: right;">4.93 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -1808,16 +2886,56 @@
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">xG (Verwacht)</span>
-                    <span class="detail-value">0.77 - 1.85 (ρ: -0.07)</span>
+                    <span class="detail-value">0.75 - 1.80 (ρ: -0.08)</span>
                 </div>
                 
                 
                 <div class="prediction-box">
                     <div class="detail-item">
                         <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
-                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">4.74 pts</strong></span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">4.75 pts</strong></span>
                     </div>
                     <span class="pred-score">0-1</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>0-1</strong></td>
+                <td>13.2%</td>
+                <td style="text-align: right;">4.75 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>0-2</strong></td>
+                <td>12.6%</td>
+                <td style="text-align: right;">4.68 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>0-3</strong></td>
+                <td>7.6%</td>
+                <td style="text-align: right;">4.42 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>1-2</strong></td>
+                <td>9.5%</td>
+                <td style="text-align: right;">4.42 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>0-4</strong></td>
+                <td>3.4%</td>
+                <td style="text-align: right;">4.20 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
             </div>
@@ -1850,6 +2968,46 @@
                         <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">9.02 pts</strong></span>
                     </div>
                     <span class="pred-score">1-0</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>1-0</strong></td>
+                <td>14.4%</td>
+                <td style="text-align: right;">9.02 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>2-0</strong></td>
+                <td>13.7%</td>
+                <td style="text-align: right;">8.96 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>3-0</strong></td>
+                <td>8.5%</td>
+                <td style="text-align: right;">8.65 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>4-0</strong></td>
+                <td>3.9%</td>
+                <td style="text-align: right;">8.38 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>5-0</strong></td>
+                <td>1.5%</td>
+                <td style="text-align: right;">8.24 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
                 <div class="scorer-tips">
@@ -1895,6 +3053,46 @@
                     </div>
                     <span class="pred-score">1-0</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>1-0</strong></td>
+                <td>11.7%</td>
+                <td style="text-align: right;">3.76 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>2-1</strong></td>
+                <td>8.9%</td>
+                <td style="text-align: right;">3.55 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>2-0</strong></td>
+                <td>8.6%</td>
+                <td style="text-align: right;">3.52 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>1-1</strong></td>
+                <td>13.3%</td>
+                <td style="text-align: right;">3.26 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>3-1</strong></td>
+                <td>4.1%</td>
+                <td style="text-align: right;">3.24 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -1926,6 +3124,46 @@
                         <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">4.65 pts</strong></span>
                     </div>
                     <span class="pred-score">1-0</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>1-0</strong></td>
+                <td>11.6%</td>
+                <td style="text-align: right;">4.65 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>2-0</strong></td>
+                <td>11.6%</td>
+                <td style="text-align: right;">4.62 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>2-1</strong></td>
+                <td>9.8%</td>
+                <td style="text-align: right;">4.47 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>3-0</strong></td>
+                <td>7.4%</td>
+                <td style="text-align: right;">4.39 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>3-1</strong></td>
+                <td>6.3%</td>
+                <td style="text-align: right;">4.24 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
             </div>
@@ -1959,6 +3197,46 @@
                     </div>
                     <span class="pred-score">2-0</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>2-0</strong></td>
+                <td>13.3%</td>
+                <td style="text-align: right;">5.42 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>1-0</strong></td>
+                <td>11.0%</td>
+                <td style="text-align: right;">5.31 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>3-0</strong></td>
+                <td>10.5%</td>
+                <td style="text-align: right;">5.28 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>4-0</strong></td>
+                <td>6.2%</td>
+                <td style="text-align: right;">5.07 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>2-1</strong></td>
+                <td>9.0%</td>
+                <td style="text-align: right;">5.05 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -1990,6 +3268,46 @@
                         <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">8.31 pts</strong></span>
                     </div>
                     <span class="pred-score">0-2</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>0-2</strong></td>
+                <td>9.3%</td>
+                <td style="text-align: right;">8.31 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>0-3</strong></td>
+                <td>7.7%</td>
+                <td style="text-align: right;">8.18 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>0-1</strong></td>
+                <td>7.4%</td>
+                <td style="text-align: right;">8.17 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>0-4</strong></td>
+                <td>4.8%</td>
+                <td style="text-align: right;">7.96 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>0-5</strong></td>
+                <td>2.4%</td>
+                <td style="text-align: right;">7.78 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
                 <div class="scorer-tips">
@@ -2035,6 +3353,46 @@
                     </div>
                     <span class="pred-score">0-1</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>0-1</strong></td>
+                <td>13.0%</td>
+                <td style="text-align: right;">4.28 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>0-2</strong></td>
+                <td>10.7%</td>
+                <td style="text-align: right;">4.11 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>1-2</strong></td>
+                <td>9.4%</td>
+                <td style="text-align: right;">4.00 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>0-3</strong></td>
+                <td>5.6%</td>
+                <td style="text-align: right;">3.82 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>1-3</strong></td>
+                <td>4.9%</td>
+                <td style="text-align: right;">3.71 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -2067,6 +3425,46 @@
                     </div>
                     <span class="pred-score">0-1</span>
                 </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>0-1</strong></td>
+                <td>11.4%</td>
+                <td style="text-align: right;">4.57 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>0-2</strong></td>
+                <td>11.2%</td>
+                <td style="text-align: right;">4.54 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>1-2</strong></td>
+                <td>9.9%</td>
+                <td style="text-align: right;">4.43 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>0-3</strong></td>
+                <td>7.1%</td>
+                <td style="text-align: right;">4.30 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>1-3</strong></td>
+                <td>6.3%</td>
+                <td style="text-align: right;">4.20 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
         
             </div>
         </div>
@@ -2098,6 +3496,118 @@
                         <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">4.31 pts</strong></span>
                     </div>
                     <span class="pred-score">0-1</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>0-1</strong></td>
+                <td>10.8%</td>
+                <td style="text-align: right;">4.31 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>0-2</strong></td>
+                <td>10.2%</td>
+                <td style="text-align: right;">4.26 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>1-2</strong></td>
+                <td>9.9%</td>
+                <td style="text-align: right;">4.23 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>0-3</strong></td>
+                <td>6.2%</td>
+                <td style="text-align: right;">4.01 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>1-3</strong></td>
+                <td>6.0%</td>
+                <td style="text-align: right;">3.98 pts</td>
+            </tr>
+            </tbody></table>
+                </div>
+        
+            </div>
+        </div>
+        
+        <div class="match-card ">
+            <div class="match-header">
+                <span>📅 2026-06-25 22:00</span>
+                
+            </div>
+            <div class="match-teams">
+                <span class="team home">Curaçao</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">Côte d'Ivoire</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">6% / 10% / 86%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">0.56 - 2.82 (ρ: 0.09)</span>
+                </div>
+                
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">5.97 pts</strong></span>
+                    </div>
+                    <span class="pred-score">0-2</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    <table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>
+            <tr class="rank-1">
+                <td><span class="badge-rank">Hoofdadvies</span></td>
+                <td><strong>0-2</strong></td>
+                <td>13.6%</td>
+                <td style="text-align: right;">5.97 pts</td>
+            </tr>
+            
+            <tr class="rank-2">
+                <td><span class="badge-rank">#2</span></td>
+                <td><strong>0-3</strong></td>
+                <td>12.7%</td>
+                <td style="text-align: right;">5.93 pts</td>
+            </tr>
+            
+            <tr class="rank-3">
+                <td><span class="badge-rank">#3</span></td>
+                <td><strong>0-1</strong></td>
+                <td>10.1%</td>
+                <td style="text-align: right;">5.79 pts</td>
+            </tr>
+            
+            <tr class="rank-4">
+                <td><span class="badge-rank">#4</span></td>
+                <td><strong>0-4</strong></td>
+                <td>9.0%</td>
+                <td style="text-align: right;">5.76 pts</td>
+            </tr>
+            
+            <tr class="rank-5">
+                <td><span class="badge-rank">#5</span></td>
+                <td><strong>0-5</strong></td>
+                <td>5.1%</td>
+                <td style="text-align: right;">5.58 pts</td>
+            </tr>
+            </tbody></table>
                 </div>
         
             </div>
@@ -2520,10 +4030,7 @@
                 let [lam_h, lam_a, rho] = nelderMead(target_h, target_d, target_a, target_ou_home, target_ou_away);
                 let matrix = calcMatrix(lam_h, lam_a, rho);
                 
-                let best_ev = -1.0;
-                let best_pred = [0, 0];
-                let best_scorers = [false, false];
-                
+                let all_predictions = [];
                 for (let h = 0; h <= 6; h++) {
                     for (let a = 0; a <= 6; a++) {
                         let ev;
@@ -2536,22 +4043,60 @@
                             ev = calcEvRegular(h, a, matrix);
                         }
                         
-                        if (ev > best_ev) {
-                            best_ev = ev;
-                            best_pred = [h, a];
-                            best_scorers = scorers;
-                        }
+                        let prob = matrix[h][a] || 0.0;
+                        all_predictions.push({
+                            h: h,
+                            a: a,
+                            ev: ev,
+                            kans: prob * 100.0,
+                            scorers: scorers
+                        });
                     }
                 }
                 
-                document.getElementById('result-score').innerText = `${best_pred[0]}-${best_pred[1]}`;
-                document.getElementById('result-ev').innerText = `${best_ev.toFixed(2)} pts`;
+                all_predictions.sort((x, y) => y.ev - x.ev);
+                let top_5 = all_predictions.slice(0, 5);
+                let best = top_5[0];
+                
+                document.getElementById('result-score').innerText = `${best.h}-${best.a}`;
+                document.getElementById('result-ev').innerText = `${best.ev.toFixed(2)} pts`;
                 document.getElementById('result-xg').innerText = `xG Thuis: ${lam_h.toFixed(2)} | xG Uit: ${lam_a.toFixed(2)} (ρ: ${rho.toFixed(2)})`;
+                
+                let top5Html = `<table class="top-predictions-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Uitslag</th>
+                            <th>Kans</th>
+                            <th style="text-align: right;">EV</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+                
+                top_5.forEach((pred, index) => {
+                    let rank = index + 1;
+                    let rankClass = `rank-${rank}`;
+                    let badgeText = rank === 1 ? "Hoofdadvies" : `#${rank}`;
+                    let uitslag = `${pred.h}-${pred.a}`;
+                    let kans = `${pred.kans.toFixed(1)}%`;
+                    let ev = `${pred.ev.toFixed(2)} pts`;
+                    
+                    top5Html += `
+                    <tr class="${rankClass}">
+                        <td><span class="badge-rank">${badgeText}</span></td>
+                        <td><strong>${uitslag}</strong></td>
+                        <td>${kans}</td>
+                        <td style="text-align: right;">${ev}</td>
+                    </tr>`;
+                });
+                top5Html += `</tbody></table>`;
+                
+                document.getElementById('calc-top-5-container').innerHTML = top5Html;
                 
                 const scorerDiv = document.getElementById('result-scorer-tips');
                 if (isMotd) {
-                    document.getElementById('result-scorer-home').innerText = best_scorers[0] ? "Spits (of penaltynemer)" : "Geen score";
-                    document.getElementById('result-scorer-away').innerText = best_scorers[1] ? "Spits (of penaltynemer)" : "Geen score";
+                    document.getElementById('result-scorer-home').innerText = best.scorers[0] ? "Spits (of penaltynemer)" : "Geen score";
+                    document.getElementById('result-scorer-away').innerText = best.scorers[1] ? "Spits (of penaltynemer)" : "Geen score";
                     scorerDiv.style.display = 'flex';
                 } else {
                     scorerDiv.style.display = 'none';

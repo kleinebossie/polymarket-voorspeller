@@ -346,6 +346,7 @@ def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None, team_ou_home=
     best_pred = (0, 0)
     best_scorers = (False, False)
     
+    alle_voorspellingen = []
     for h in range(7):
         for a in range(7):
             if is_motd:
@@ -354,11 +355,22 @@ def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None, team_ou_home=
                 ev = calc_ev_regular(h, a, matrix)
                 scorers = (False, False)
                 
+            prob = matrix.get((h, a), 0.0)
+            alle_voorspellingen.append({
+                "uitslag": f"{h}-{a}",
+                "ev": ev,
+                "kans": prob * 100.0,
+                "scorers": scorers
+            })
+            
             if ev > best_ev:
                 best_ev = ev
                 best_pred = (h, a)
                 best_scorers = scorers
                 
+    alle_voorspellingen.sort(key=lambda x: x["ev"], reverse=True)
+    top_5 = alle_voorspellingen[:5]
+    
     uitslag = f"{best_pred[0]}-{best_pred[1]}"
     
     if is_motd:
@@ -380,7 +392,8 @@ def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None, team_ou_home=
         "uitleg": uitleg,
         "xpts": best_ev,
         "team_ou_home": team_ou_home,
-        "team_ou_away": team_ou_away
+        "team_ou_away": team_ou_away,
+        "top_5": top_5
     }
 
 def print_resultaat(res, is_motd, toon_extra=False):
@@ -1470,6 +1483,72 @@ def exporteer_naar_html(alle_res, bestandsnaam):
             to {{ transform: rotate(360deg); }}
         }}
         
+        /* Top 5 predictions table */
+        .top-predictions-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 6px;
+            font-size: 0.82rem;
+        }}
+        
+        .top-predictions-table th, .top-predictions-table td {{
+            padding: 6px 8px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }}
+        
+        .top-predictions-table th {{
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.05em;
+        }}
+        
+        .top-predictions-table tr:last-child td {{
+            border-bottom: none;
+        }}
+        
+        .top-predictions-table tr.rank-1 td {{
+            color: var(--accent-green);
+        }}
+        
+        .top-predictions-table tr.rank-1 {{
+            background: rgba(16, 185, 129, 0.08);
+            font-weight: 600;
+        }}
+        
+        .is-motd .top-predictions-table tr.rank-1 td,
+        .is-motd-active .top-predictions-table tr.rank-1 td {{
+            color: var(--accent-yellow);
+        }}
+        
+        .is-motd .top-predictions-table tr.rank-1,
+        .is-motd-active .top-predictions-table tr.rank-1 {{
+            background: rgba(245, 158, 11, 0.08);
+        }}
+        
+        .badge-rank {{
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+        }}
+        
+        .rank-1 .badge-rank {{
+            background: var(--accent-green);
+            color: var(--bg-color);
+        }}
+        
+        .is-motd .rank-1 .badge-rank,
+        .is-motd-active .rank-1 .badge-rank {{
+            background: var(--accent-yellow);
+            color: var(--bg-color);
+        }}
+        
         @media (max-width: 480px) {{
             .ou-container {{
                 grid-template-columns: 1fr;
@@ -1627,6 +1706,10 @@ def exporteer_naar_html(alle_res, bestandsnaam):
                         <span class="calc-results-score" id="result-score">0-0</span>
                     </div>
                     
+                    <div id="calc-top-5-container" style="margin-top: 8px;">
+                        <!-- Hier komt de top 5 tabel dynamically -->
+                    </div>
+                    
                     <div class="scorer-tips" id="result-scorer-tips" style="display: none;">
                         <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
                         <div class="scorer-row">
@@ -1644,6 +1727,28 @@ def exporteer_naar_html(alle_res, bestandsnaam):
 """
     
     for m, res in alle_res:
+        # Genereer top 5 tabel HTML
+        top_5_html = '<table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>Kans</th><th style="text-align: right;">EV</th></tr></thead><tbody>'
+        for rank_idx, pred in enumerate(res.get("top_5", [])):
+            rank = rank_idx + 1
+            is_rank_1 = (rank == 1)
+            rank_class = f"rank-{rank}"
+            badge_text = "Hoofdadvies" if is_rank_1 else f"#{rank}"
+            
+            uitslag_val = pred["uitslag"]
+            kans_val = f"{pred['kans']:.1f}%"
+            ev_val_str = f"{pred['ev']:.2f} pts"
+            
+            top_5_html += f"""
+            <tr class="{rank_class}">
+                <td><span class="badge-rank">{badge_text}</span></td>
+                <td><strong>{uitslag_val}</strong></td>
+                <td>{kans_val}</td>
+                <td style="text-align: right;">{ev_val_str}</td>
+            </tr>
+            """
+        top_5_html += "</tbody></table>"
+
         motd_badge = '<span class="motd-badge">Wedstrijd van de Dag</span>' if m["is_motd"] else ''
         card_class = 'is-motd' if m["is_motd"] else ''
         datum_str = converteer_utc_naar_nl(m['date'])
@@ -1704,6 +1809,11 @@ def exporteer_naar_html(alle_res, bestandsnaam):
                         <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">{res.get('xpts', 0.0):.2f} pts</strong></span>
                     </div>
                     <span class="pred-score">{res['uitslag']}</span>
+                </div>
+                
+                <div class="top-predictions-container" style="grid-column: span 2; margin-top: 4px;">
+                    <span class="detail-label" style="display: block; margin-bottom: 4px; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem;">Top 5 Verwachte Uitslagen</span>
+                    {top_5_html}
                 </div>
         """
         
@@ -2149,10 +2259,7 @@ def exporteer_naar_html(alle_res, bestandsnaam):
                 let [lam_h, lam_a, rho] = nelderMead(target_h, target_d, target_a, target_ou_home, target_ou_away);
                 let matrix = calcMatrix(lam_h, lam_a, rho);
                 
-                let best_ev = -1.0;
-                let best_pred = [0, 0];
-                let best_scorers = [false, false];
-                
+                let all_predictions = [];
                 for (let h = 0; h <= 6; h++) {
                     for (let a = 0; a <= 6; a++) {
                         let ev;
@@ -2165,22 +2272,60 @@ def exporteer_naar_html(alle_res, bestandsnaam):
                             ev = calcEvRegular(h, a, matrix);
                         }
                         
-                        if (ev > best_ev) {
-                            best_ev = ev;
-                            best_pred = [h, a];
-                            best_scorers = scorers;
-                        }
+                        let prob = matrix[h][a] || 0.0;
+                        all_predictions.push({
+                            h: h,
+                            a: a,
+                            ev: ev,
+                            kans: prob * 100.0,
+                            scorers: scorers
+                        });
                     }
                 }
                 
-                document.getElementById('result-score').innerText = `${best_pred[0]}-${best_pred[1]}`;
-                document.getElementById('result-ev').innerText = `${best_ev.toFixed(2)} pts`;
+                all_predictions.sort((x, y) => y.ev - x.ev);
+                let top_5 = all_predictions.slice(0, 5);
+                let best = top_5[0];
+                
+                document.getElementById('result-score').innerText = `${best.h}-${best.a}`;
+                document.getElementById('result-ev').innerText = `${best.ev.toFixed(2)} pts`;
                 document.getElementById('result-xg').innerText = `xG Thuis: ${lam_h.toFixed(2)} | xG Uit: ${lam_a.toFixed(2)} (ρ: ${rho.toFixed(2)})`;
+                
+                let top5Html = `<table class="top-predictions-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Uitslag</th>
+                            <th>Kans</th>
+                            <th style="text-align: right;">EV</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+                
+                top_5.forEach((pred, index) => {
+                    let rank = index + 1;
+                    let rankClass = `rank-${rank}`;
+                    let badgeText = rank === 1 ? "Hoofdadvies" : `#${rank}`;
+                    let uitslag = `${pred.h}-${pred.a}`;
+                    let kans = `${pred.kans.toFixed(1)}%`;
+                    let ev = `${pred.ev.toFixed(2)} pts`;
+                    
+                    top5Html += `
+                    <tr class="${rankClass}">
+                        <td><span class="badge-rank">${badgeText}</span></td>
+                        <td><strong>${uitslag}</strong></td>
+                        <td>${kans}</td>
+                        <td style="text-align: right;">${ev}</td>
+                    </tr>`;
+                });
+                top5Html += `</tbody></table>`;
+                
+                document.getElementById('calc-top-5-container').innerHTML = top5Html;
                 
                 const scorerDiv = document.getElementById('result-scorer-tips');
                 if (isMotd) {
-                    document.getElementById('result-scorer-home').innerText = best_scorers[0] ? "Spits (of penaltynemer)" : "Geen score";
-                    document.getElementById('result-scorer-away').innerText = best_scorers[1] ? "Spits (of penaltynemer)" : "Geen score";
+                    document.getElementById('result-scorer-home').innerText = best.scorers[0] ? "Spits (of penaltynemer)" : "Geen score";
+                    document.getElementById('result-scorer-away').innerText = best.scorers[1] ? "Spits (of penaltynemer)" : "Geen score";
                     scorerDiv.style.display = 'flex';
                 } else {
                     scorerDiv.style.display = 'none';
