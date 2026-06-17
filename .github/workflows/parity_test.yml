@@ -1,0 +1,43 @@
+name: Python/JS Pariteitstest
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'polymarket_voorspeller.py'
+      - 'test_js_parity.py'
+      - 'index.html'
+      - '.github/workflows/parity_test.yml'
+  pull_request:
+    paths:
+      - 'polymarket_voorspeller.py'
+      - 'test_js_parity.py'
+      - 'index.html'
+  workflow_dispatch:
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests scipy
+
+    - name: Run Python/JS parity test
+      run: |
+        python test_js_parity.py

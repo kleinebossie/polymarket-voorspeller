@@ -99,44 +99,99 @@ def predict_baseline_favorite(home_prob, draw_prob, away_prob):
     else:
         return (0, 1)
 
-def predict_baseline_mode(home_prob, draw_prob, away_prob, ou_probs=None, team_ou_home=None, team_ou_away=None, loss_type="logloss", overround_method="power", verbose=False, weight_match_ou=None, weight_team_ou=None):
+def predict_baseline_mode(home_prob, draw_prob, away_prob, ou_probs=None, team_ou_home=None, team_ou_away=None,
+                          btts_prob=None, clean_sheet_home_prob=None, clean_sheet_away_prob=None,
+                          loss_type="logloss", overround_method="power", verbose=False,
+                          weight_match_ou=None, weight_team_ou=None, weight_extra_markets=None):
     """Baseline B: Predict the score with the highest probability in the joint distribution."""
     p_h, p_d, p_a = normaliseer_kansen(home_prob, draw_prob, away_prob, method=overround_method)
     lam_h, lam_a, rho = bepaal_poisson_lambdas(
         p_h, p_d, p_a, ou_probs,
         target_team_ou_home=team_ou_home, target_team_ou_away=team_ou_away,
+        target_btts=btts_prob, target_clean_sheet_home=clean_sheet_home_prob,
+        target_clean_sheet_away=clean_sheet_away_prob,
         loss_type=loss_type, verbose=verbose,
-        weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou
+        weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou,
+        weight_extra_markets=weight_extra_markets
     )
     matrix = calc_matrix(lam_h, lam_a, rho)
     # Vind de uitslag tuple (h, a) met de hoogste kans in de matrix
     best_score = max(matrix, key=matrix.get)
     return best_score
 
-def predict_ev_optimal(home_prob, draw_prob, away_prob, is_motd, ou_probs=None, team_ou_home=None, team_ou_away=None, loss_type="logloss", overround_method="power", verbose=False, weight_match_ou=None, weight_team_ou=None, tiebreak="probability"):
+def predict_ev_optimal(home_prob, draw_prob, away_prob, is_motd, ou_probs=None, team_ou_home=None, team_ou_away=None,
+                       btts_prob=None, clean_sheet_home_prob=None, clean_sheet_away_prob=None,
+                       loss_type="logloss", overround_method="power", verbose=False,
+                       weight_match_ou=None, weight_team_ou=None, weight_extra_markets=None,
+                       tiebreak="probability", scorer_rate=None):
     """Strategy C: Predict the score that maximizes expected points (EV)."""
     res = voorspel(
         home_prob, draw_prob, away_prob, is_motd,
         ou_probs=ou_probs, team_ou_home=team_ou_home, team_ou_away=team_ou_away,
+        btts_prob=btts_prob, clean_sheet_home_prob=clean_sheet_home_prob,
+        clean_sheet_away_prob=clean_sheet_away_prob,
         loss_type=loss_type, overround_method=overround_method, verbose=verbose,
         weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou,
-        tiebreak=tiebreak
+        weight_extra_markets=weight_extra_markets,
+        tiebreak=tiebreak, scorer_rate=scorer_rate
     )
     pred_str = res["uitslag"]
-    return parse_score(pred_str)
+    return parse_score(pred_str), res.get("scorer_thuis_bool", False), res.get("scorer_uit_bool", False)
 
-def calculate_actual_points(pred_h, pred_a, act_h, act_a, is_motd):
+def calculate_actual_points(pred_h, pred_a, act_h, act_a, is_motd, scorer_rate=None, act_scorer_h_hit=None, act_scorer_a_hit=None, pred_scorer_h=None, pred_scorer_a=None):
     """Bereken de behaalde punten voor een voorspelling tegen de werkelijke uitslag."""
-    # We hergebruiken de bestaande logica door een matrix te maken
-    # waarin de werkelijke uitslag een kans van 1.0 (100%) heeft.
-    matrix = {(act_h, act_a): 1.0}
     if is_motd:
-        pts, _ = calc_ev_motd(pred_h, pred_a, matrix)
+        # Bepaal punten voor de exacte score en toto
+        pts = 0
+        if pred_h == act_h and pred_a == act_a:
+            pts += 12
+        else:
+            pred_toto = 1 if pred_h > pred_a else (-1 if pred_h < pred_a else 0)
+            act_toto = 1 if act_h > act_a else (-1 if act_h < act_a else 0)
+            if pred_toto == act_toto:
+                if pred_toto == 0:
+                    pts += 8
+                else:
+                    pts += 6
+            
+            if pred_h == act_h: pts += 2
+            if pred_a == act_a: pts += 2
+            
+        # Punten voor doelpuntenmakers
+        if pred_scorer_h is None:
+            pred_scorer_h = (pred_h > 0)
+        if pred_scorer_a is None:
+            pred_scorer_a = (pred_a > 0)
+        
+        # Thuis scorer
+        if not pred_scorer_h:
+            if act_h == 0: pts += 4
+        else:
+            if act_scorer_h_hit is not None:
+                if act_scorer_h_hit: pts += 4
+            else:
+                if act_h > 0:
+                    rate = scorer_rate if scorer_rate is not None else 0.35
+                    pts += 4 * rate
+                    
+        # Uit scorer
+        if not pred_scorer_a:
+            if act_a == 0: pts += 4
+        else:
+            if act_scorer_a_hit is not None:
+                if act_scorer_a_hit: pts += 4
+            else:
+                if act_a > 0:
+                    rate = scorer_rate if scorer_rate is not None else 0.35
+                    pts += 4 * rate
+                    
+        return pts
     else:
-        pts = calc_ev_regular(pred_h, pred_a, matrix)
-    return pts
+        matrix = {(act_h, act_a): 1.0}
+        return calc_ev_regular(pred_h, pred_a, matrix)
 
-def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", verbose=False, weight_match_ou=None, weight_team_ou=None, silent=False, tiebreak="probability"):
+
+def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", verbose=False, weight_match_ou=None, weight_team_ou=None, weight_extra_markets=None, silent=False, tiebreak="probability", scorer_rate=None):
     """Leest de CSV-data en voert de backtest uit voor alle strategieën."""
     if not os.path.exists(csv_path):
         if not silent:
@@ -163,6 +218,11 @@ def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", v
         col_ou_2_5 = headers.get('ou_2.5_over') or headers.get('ou_over_2.5') or headers.get('ou_2.5')
         col_team_ou_home = headers.get('team_ou_home_1.5_over') or headers.get('team_home_1.5') or headers.get('team_ou_home')
         col_team_ou_away = headers.get('team_ou_away_1.5_over') or headers.get('team_away_1.5') or headers.get('team_ou_away')
+        col_btts = headers.get('btts_prob') or headers.get('btts')
+        col_cs_home = headers.get('clean_sheet_home') or headers.get('cs_home')
+        col_cs_away = headers.get('clean_sheet_away') or headers.get('cs_away')
+        col_home_scorer_hit = headers.get('home_scorer_hit') or headers.get('thuis_scorer_hit')
+        col_away_scorer_hit = headers.get('away_scorer_hit') or headers.get('uit_scorer_hit')
 
         # Validatie van verplichte kolommen
         missende_kolommen = []
@@ -210,6 +270,39 @@ def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", v
                     away_ou_val = parse_percentage_local(row[col_team_ou_away]) / 100.0
                     team_ou_away = {1.5: (1.0 - away_ou_val, away_ou_val)}
                 
+                # Parse scorer hit data if available
+                act_scorer_h_hit = None
+                if col_home_scorer_hit and row.get(col_home_scorer_hit):
+                    val = row[col_home_scorer_hit].strip().lower()
+                    act_scorer_h_hit = val in ('true', '1', 'ja', 'yes', 'y', 't')
+                    
+                act_scorer_a_hit = None
+                if col_away_scorer_hit and row.get(col_away_scorer_hit):
+                    val = row[col_away_scorer_hit].strip().lower()
+                    act_scorer_a_hit = val in ('true', '1', 'ja', 'yes', 'y', 't')
+                
+                # Parse BTTS & Clean Sheet columns
+                btts_prob = None
+                if col_btts and row.get(col_btts):
+                    try:
+                        btts_prob = float(row[col_btts].strip())
+                    except ValueError:
+                        pass
+                        
+                clean_sheet_home_prob = None
+                if col_cs_home and row.get(col_cs_home):
+                    try:
+                        clean_sheet_home_prob = float(row[col_cs_home].strip())
+                    except ValueError:
+                        pass
+                        
+                clean_sheet_away_prob = None
+                if col_cs_away and row.get(col_cs_away):
+                    try:
+                        clean_sheet_away_prob = float(row[col_cs_away].strip())
+                    except ValueError:
+                        pass
+                
                 wedstrijden.append({
                     "thuis": thuis,
                     "uit": uit,
@@ -221,7 +314,12 @@ def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", v
                     "is_motd": is_motd,
                     "ou_probs": ou_probs,
                     "team_ou_home": team_ou_home,
-                    "team_ou_away": team_ou_away
+                    "team_ou_away": team_ou_away,
+                    "btts_prob": btts_prob,
+                    "clean_sheet_home_prob": clean_sheet_home_prob,
+                    "clean_sheet_away_prob": clean_sheet_away_prob,
+                    "act_scorer_h_hit": act_scorer_h_hit,
+                    "act_scorer_a_hit": act_scorer_a_hit
                 })
             except Exception as e:
                 if not silent:
@@ -268,29 +366,42 @@ def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", v
         pred_mode_h, pred_mode_a = predict_baseline_mode(
             w["home_prob"], w["draw_prob"], w["away_prob"],
             ou_probs=w["ou_probs"], team_ou_home=w["team_ou_home"], team_ou_away=w["team_ou_away"],
+            btts_prob=w.get("btts_prob"), clean_sheet_home_prob=w.get("clean_sheet_home_prob"),
+            clean_sheet_away_prob=w.get("clean_sheet_away_prob"),
             loss_type=loss_type, overround_method=overround_method, verbose=verbose,
-            weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou
+            weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou,
+            weight_extra_markets=weight_extra_markets
         )
         
         # 3. EV-optimalisatie
         if verbose and not silent:
             print("  --- Fit voor EV-optimalisatie ---")
-        pred_ev_h, pred_ev_a = predict_ev_optimal(
+        (pred_ev_h, pred_ev_a), scorer_h, scorer_a = predict_ev_optimal(
             w["home_prob"], w["draw_prob"], w["away_prob"], w["is_motd"],
             ou_probs=w["ou_probs"], team_ou_home=w["team_ou_home"], team_ou_away=w["team_ou_away"],
+            btts_prob=w.get("btts_prob"), clean_sheet_home_prob=w.get("clean_sheet_home_prob"),
+            clean_sheet_away_prob=w.get("clean_sheet_away_prob"),
             loss_type=loss_type, overround_method=overround_method, verbose=verbose,
             weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou,
-            tiebreak=tiebreak
+            weight_extra_markets=weight_extra_markets,
+            tiebreak=tiebreak, scorer_rate=scorer_rate
         )
         
         predictions_map = {
-            "fav": (pred_fav_h, pred_fav_a),
-            "mode": (pred_mode_h, pred_mode_a),
-            "ev": (pred_ev_h, pred_ev_a)
+            "fav": ((pred_fav_h, pred_fav_a), None, None),
+            "mode": ((pred_mode_h, pred_mode_a), None, None),
+            "ev": ((pred_ev_h, pred_ev_a), scorer_h, scorer_a)
         }
         
-        for k, (ph, pa) in predictions_map.items():
-            pts = calculate_actual_points(ph, pa, act_h, act_a, w["is_motd"])
+        for k, ((ph, pa), sh, sa) in predictions_map.items():
+            pts = calculate_actual_points(
+                ph, pa, act_h, act_a, w["is_motd"],
+                scorer_rate=scorer_rate,
+                act_scorer_h_hit=w.get("act_scorer_h_hit"),
+                act_scorer_a_hit=w.get("act_scorer_a_hit"),
+                pred_scorer_h=sh,
+                pred_scorer_a=sa
+            )
             stats[k]["punten"] += pts
             
             # Hit rate checks
@@ -350,7 +461,7 @@ def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", v
     print("-" * 115)
     print()
 
-def grid_search_modus(csv_path, loss_type="logloss", overround_method="power", tiebreak="probability"):
+def grid_search_modus(csv_path, loss_type="logloss", overround_method="power", tiebreak="probability", scorer_rate=None):
     """
     Voert een grid search uit over verschillende combinaties van wedstrijd en team Over/Under gewichten
     om de combinatie te vinden die de meeste poulepunten oplevert.
@@ -382,8 +493,10 @@ def grid_search_modus(csv_path, loss_type="logloss", overround_method="power", t
                 weight_match_ou=m_ou, 
                 weight_team_ou=t_ou, 
                 silent=True,
-                tiebreak=tiebreak
+                tiebreak=tiebreak,
+                scorer_rate=scorer_rate
             )
+
             results.append((m_ou, t_ou, gem_pts))
             print(f"|        {m_ou:<11.1f} |      {t_ou:<11.1f} |         {gem_pts:<14.3f} |")
             
@@ -409,6 +522,60 @@ def grid_search_modus(csv_path, loss_type="logloss", overround_method="power", t
         label = "⭐️ Beste" if rank == 1 else ""
         print(f"{rank:4d} | {m_ou:<10.1f} | {t_ou:<10.1f} | {gem_pts:<18.3f} | {label}")
     print("-" * 65)
+    print()
+
+def grid_search_scorer(csv_path, loss_type="logloss", overround_method="power", tiebreak="probability"):
+    """
+    Voert een grid search uit over verschillende waarden van de scorer_rate
+    om te bepalen welke factor de meeste poulepunten oplevert op de backtest dataset.
+    """
+    scorer_rates = [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
+    
+    print(f"{BOLD}GRID SEARCH SCORER RATE GESTART{RESET}")
+    print(f"Dataset: {csv_path}")
+    print(f"Raster: scorer_rate ∈ {scorer_rates}\n")
+    
+    print(f"{CYAN}{BOLD}+------------------+------------------------+{RESET}")
+    print(f"{CYAN}{BOLD}| Scorer Hit-Rate  | Gemiddelde Poulepunten |{RESET}")
+    print(f"{CYAN}{BOLD}+------------------+------------------------+{RESET}")
+    
+    best_rate = None
+    best_gem_pts = -1.0
+    results = []
+    
+    for rate in scorer_rates:
+        gem_pts = evalueer_backtest(
+            csv_path, 
+            loss_type=loss_type, 
+            overround_method=overround_method, 
+            verbose=False, 
+            silent=True,
+            tiebreak=tiebreak,
+            scorer_rate=rate
+        )
+        results.append((rate, gem_pts))
+        print(f"|        {rate:<9.2f} |         {gem_pts:<14.3f} |")
+        
+        if gem_pts > best_gem_pts:
+            best_gem_pts = gem_pts
+            best_rate = rate
+            
+    print(f"{CYAN}{BOLD}+------------------+------------------------+{RESET}\n")
+    print(f"{GREEN}{BOLD}Beste scorer-rate gevonden:{RESET}")
+    print(f"  • Scorer Hit-Rate:  {YELLOW}{best_rate:.2f}{RESET}")
+    print(f"  • Gemiddelde punten: {GREEN}{best_gem_pts:.3f}{RESET} per wedstrijd\n")
+    
+    # Sorteer en rangschik
+    results.sort(key=lambda x: x[1], reverse=True)
+    print(f"{BOLD}Rangschikking van alle rates (hoogste score eerst):{RESET}")
+    print("-" * 50)
+    print(f"{'Rang':<4} | {'Scorer Rate':<12} | {'Gemiddelde Punten':<18} | Opmerking")
+    print("-" * 50)
+    for idx, (rate, gem_pts) in enumerate(results):
+        rank = idx + 1
+        label = "⭐️ Beste" if rank == 1 else ""
+        print(f"{rank:4d} | {rate:<12.2f} | {gem_pts:<18.3f} | {label}")
+    print("-" * 50)
     print()
 
 if __name__ == "__main__":
@@ -449,6 +616,13 @@ if __name__ == "__main__":
         help="Handmatig overschrijven van het team Over/Under gewicht"
     )
     parser.add_argument(
+        "--weight-extra-markets",
+        type=float,
+        default=None,
+        dest="weight_extra_markets",
+        help="Handmatig overschrijven van het BTTS/Clean Sheet gewicht (standaard: 0.6)"
+    )
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Toon extra debug-informatie, zoals optimalisatie-residuals"
@@ -459,6 +633,17 @@ if __name__ == "__main__":
         default="probability",
         help="De te gebruiken tie-breaker strategie bij gelijke EV (standaard: probability)"
     )
+    parser.add_argument(
+        "--scorer-rate",
+        type=float,
+        default=None,
+        help="De scoringskans van de spits bij MOTD (standaard: 0.35)"
+    )
+    parser.add_argument(
+        "--grid-search-scorer",
+        action="store_true",
+        help="Start grid-search modus om de scorer hit-rate te optimaliseren"
+    )
     args = parser.parse_args()
     
     # Toon header
@@ -467,8 +652,10 @@ if __name__ == "__main__":
     print(f"========================================================{RESET}")
     print(f"Instellingen: Loss = {YELLOW}{args.loss.upper()}{RESET} | Overround = {YELLOW}{args.overround.upper()}{RESET}\n")
     
-    if args.grid_search_weights:
-        grid_search_modus(args.data, loss_type=args.loss, overround_method=args.overround, tiebreak=args.tiebreak)
+    if args.grid_search_scorer:
+        grid_search_scorer(args.data, loss_type=args.loss, overround_method=args.overround, tiebreak=args.tiebreak)
+    elif args.grid_search_weights:
+        grid_search_modus(args.data, loss_type=args.loss, overround_method=args.overround, tiebreak=args.tiebreak, scorer_rate=args.scorer_rate)
     else:
         evalueer_backtest(
             args.data, 
@@ -477,5 +664,8 @@ if __name__ == "__main__":
             verbose=args.verbose,
             weight_match_ou=args.weight_match_ou,
             weight_team_ou=args.weight_team_ou,
-            tiebreak=args.tiebreak
+            weight_extra_markets=args.weight_extra_markets,
+            tiebreak=args.tiebreak,
+            scorer_rate=args.scorer_rate
         )
+

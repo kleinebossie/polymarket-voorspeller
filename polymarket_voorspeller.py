@@ -29,6 +29,106 @@ from scipy.optimize import minimize
 # De combinatie Match O/U = 1.0 en Team O/U = 0.5 gaf de hoogste gemiddelde score (4.385 punten per wedstrijd).
 WEIGHT_MATCH_OU = 1.0
 WEIGHT_TEAM_OU = 0.5
+WEIGHT_EXTRA_MARKETS = 0.6
+SCORER_HIT_RATE = 0.35
+
+# Lichte Tikhonov-regularisatie op de Dixon-Coles ρ-parameter.
+# Met alléén 1X2-kansen (2 vrije targets) is het model met 3 parameters (λ_h, λ_a, ρ)
+# onderbepaald: er bestaat een vlakke 'ridge' waarlangs ρ vrij kan schuiven zonder de
+# 1X2-fit te veranderen. Verschillende optimizers (L-BFGS-B vs. Nelder-Mead) glijden dan
+# naar verschillende uiteinden van die ridge. Een minieme straf op ρ² maakt het minimum
+# uniek (ρ → 0 zodra de data ρ niet vastlegt) zonder goed-bepaalde fits (met O/U-data)
+# merkbaar te verschuiven. Dit is essentieel voor de Python/JS-pariteit (zie test_js_parity.py).
+RHO_REG = 1e-3
+
+# ---------------------------------------------------------------------------
+# Tie-breaker (toernooi-vragen) model-constanten
+# ---------------------------------------------------------------------------
+# Deze waarden zijn configureerbaar via de CLI (--yellow-base-min, --red-card-rate)
+# en worden gebruikt door bereken_tie_breakers() om de tie-breaker-minuten af te
+# leiden uit het Poisson-model i.p.v. uit hardcoded constanten.
+#
+# Eerste gele kaart: op grote toernooien (WK/EK) valt de eerste gele kaart gemiddeld
+# rond de 30e minuut (bron: Opta/FIFA wedstrijdsamenvattingen WK 2018-2022). We schalen
+# deze basis-mediaan licht met de wedstrijdintensiteit (λ_total = λ_h + λ_a): een opener,
+# doelpuntrijkere wedstrijd kent gemiddeld iets eerder de eerste kaart.
+FIRST_YELLOW_BASE_MIN = 30.0      # referentie-mediaan (minuut) bij een gemiddelde wedstrijd
+FIRST_YELLOW_REF_LAMBDA = 2.6     # referentie λ_total waarbij de basis-minuut exact geldt
+
+# Eerste rode kaart: zeer zeldzaam. Op het WK vallen er gemiddeld ~0.22 rode kaarten
+# (direct of 2x geel) per wedstrijd. We modelleren P(rode kaart) = 1 - exp(-rate).
+# Ligt die kans onder de drempel, dan adviseren we "geen rode kaart" (minuut > 90).
+RED_CARD_RATE = 0.22
+RED_CARD_THRESHOLD = 0.5
+
+
+def bereken_tie_breakers(lam_h, lam_a, yellow_base_min=None, yellow_ref_lambda=None,
+                         red_card_rate=None, red_card_threshold=None):
+    """
+    Leidt de toernooi-tie-breaker-voorspellingen af uit het Poisson-model i.p.v. uit
+    vaste constanten. Hierdoor varieert de uitkomst per wedstrijd op basis van de λ's.
+
+    Model:
+    - Eerste doelpunt-minuut: doelpunten arriveren als een Poisson-proces over 90 minuten
+      met totale rate λ_total = λ_h + λ_a. De mediaan-minuut van de exponentiële verdeling
+      van het eerste doelpunt is 90 * (1 - ln(2)) / λ_total, geklemd tussen 1 en 90.
+      Hoge-xG-wedstrijden geven zo een vroegere minuut, lage-xG-wedstrijden een latere.
+    - Eerste gele kaart: een historisch WK-gemiddelde (~30e min) dat licht inverse met
+      de wedstrijdintensiteit (λ_total) wordt geschaald.
+    - Eerste rode kaart: zeldzaam event. Als P(rode kaart) onder de drempel ligt, luidt
+      het advies "geen rode kaart" (minuut > 90); anders een mediaan-minuut-schatting.
+
+    Parameters:
+    lam_h (float): Verwachte doelpunten thuisploeg (λ_h).
+    lam_a (float): Verwachte doelpunten uitploeg (λ_a).
+    yellow_base_min (float, optioneel): Basis-mediaan eerste gele kaart. Standaard FIRST_YELLOW_BASE_MIN.
+    yellow_ref_lambda (float, optioneel): Referentie λ_total. Standaard FIRST_YELLOW_REF_LAMBDA.
+    red_card_rate (float, optioneel): Verwacht aantal rode kaarten per wedstrijd. Standaard RED_CARD_RATE.
+    red_card_threshold (float, optioneel): Drempel waaronder "geen rode kaart" wordt geadviseerd.
+
+    Returns:
+    dict: De berekende minuten met korte uitleg per tie-breaker.
+    """
+    if yellow_base_min is None:
+        yellow_base_min = FIRST_YELLOW_BASE_MIN
+    if yellow_ref_lambda is None:
+        yellow_ref_lambda = FIRST_YELLOW_REF_LAMBDA
+    if red_card_rate is None:
+        red_card_rate = RED_CARD_RATE
+    if red_card_threshold is None:
+        red_card_threshold = RED_CARD_THRESHOLD
+
+    lam_total = max(lam_h + lam_a, 1e-9)
+
+    # 1) Eerste doelpunt: exponentiële mediaan over 90 minuten.
+    eerste_doelpunt = round(90.0 * (1.0 - math.log(2.0)) / lam_total)
+    eerste_doelpunt = max(1, min(90, eerste_doelpunt))
+
+    # 2) Eerste gele kaart: schaal de basis-mediaan inverse met de intensiteit.
+    gele_kaart = round(yellow_base_min * (yellow_ref_lambda / lam_total))
+    gele_kaart = max(1, min(90, gele_kaart))
+
+    # 3) Eerste rode kaart: schaal de rate licht met de intensiteit en bepaal de kans.
+    eff_red_rate = red_card_rate * (lam_total / yellow_ref_lambda)
+    p_rode_kaart = 1.0 - math.exp(-eff_red_rate)
+    if p_rode_kaart < red_card_threshold:
+        rode_kaart_minuut = None  # geen rode kaart verwacht
+        rode_kaart_uitleg = (f"P(rode kaart) ≈ {p_rode_kaart*100:.0f}% < {red_card_threshold*100:.0f}% "
+                             f"→ geen rode kaart verwacht (> 90e min).")
+    else:
+        rode_kaart_minuut = max(1, min(90, round(90.0 * (1.0 - math.log(2.0)) / eff_red_rate)))
+        rode_kaart_uitleg = f"P(rode kaart) ≈ {p_rode_kaart*100:.0f}%; verwachte mediaan-minuut."
+
+    return {
+        "eerste_doelpunt_minuut": eerste_doelpunt,
+        "eerste_doelpunt_uitleg": f"Exponentiële mediaan over 90 min bij λ_total = {lam_total:.2f}.",
+        "gele_kaart_minuut": gele_kaart,
+        "gele_kaart_uitleg": f"Historisch WK-gemiddelde ({yellow_base_min:.0f}e min) geschaald met intensiteit.",
+        "rode_kaart_minuut": rode_kaart_minuut,
+        "rode_kaart_kans": p_rode_kaart,
+        "rode_kaart_uitleg": rode_kaart_uitleg,
+    }
+
 
 
 # ANSI Kleurcodes voor een mooie vormgeving in de terminal (zonder extra pakketten!)
@@ -268,7 +368,7 @@ def get_1x2_and_ou(matrix):
     a_win = sum(p for (h,a), p in matrix.items() if h < a)
     return h_win, d, a_win
 
-def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None, target_team_ou_home=None, target_team_ou_away=None, loss_type="logloss", verbose=False, weight_match_ou=None, weight_team_ou=None):
+def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None, target_team_ou_home=None, target_team_ou_away=None, target_btts=None, target_clean_sheet_home=None, target_clean_sheet_away=None, loss_type="logloss", verbose=False, weight_match_ou=None, weight_team_ou=None, weight_extra_markets=None):
     """
     Vindt de optimale Poisson-lambda's en de Dixon-Coles rho-waarde die het beste aansluiten
     bij de gewenste winst-, gelijkspel- en verlieskansen (en eventuele over/under kansen).
@@ -281,10 +381,14 @@ def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None, target_
     target_ou (dict, optioneel): Kansen voor over/under doelpuntengrenzen.
     target_team_ou_home (dict, optioneel): Kansen voor team-specifieke over/under grenzen (thuis).
     target_team_ou_away (dict, optioneel): Kansen voor team-specifieke over/under grenzen (uit).
+    target_btts (float, optioneel): Kansen voor beide teams scoren (BTTS).
+    target_clean_sheet_home (float, optioneel): Kansen voor clean sheet van thuisploeg.
+    target_clean_sheet_away (float, optioneel): Kansen voor clean sheet van uitploeg.
     loss_type (str, optioneel): De te gebruiken verliesfunctie ('mse' of 'logloss'). Standaard 'logloss'.
     verbose (bool, optioneel): Of er debug-logging getoond moet worden voor de fits. Standaard False.
     weight_match_ou (float, optioneel): Het gewicht voor de wedstrijd Over/Under fit-termen.
     weight_team_ou (float, optioneel): Het gewicht voor de team Over/Under fit-termen.
+    weight_extra_markets (float, optioneel): Het gewicht voor de extra markten fit-termen.
     
     Returns:
     tuple: Een drietal met de berekende parameters (lambda_thuis, lambda_uit, rho).
@@ -293,6 +397,19 @@ def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None, target_
         weight_match_ou = WEIGHT_MATCH_OU
     if weight_team_ou is None:
         weight_team_ou = WEIGHT_TEAM_OU
+    if weight_extra_markets is None:
+        weight_extra_markets = WEIGHT_EXTRA_MARKETS
+
+    if verbose:
+        extra_targets = []
+        if target_btts is not None:
+            extra_targets.append(f"BTTS: {target_btts:.4f}")
+        if target_clean_sheet_home is not None:
+            extra_targets.append(f"CS Thuis: {target_clean_sheet_home:.4f}")
+        if target_clean_sheet_away is not None:
+            extra_targets.append(f"CS Uit: {target_clean_sheet_away:.4f}")
+        if extra_targets:
+            print(f"  [Debug Fit] Extra targets gebruikt in fit: {', '.join(extra_targets)} (gewicht: {weight_extra_markets:.2f})")
 
     def objective(params):
         lh, la, r = params
@@ -385,7 +502,34 @@ def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None, target_
                     error += -(t_u * math.log(max(u, eps)) + t_o * math.log(max(o, eps))) * weight_team_ou * weight_factor
                 else:
                     error += ((u - t_u)**2 + (o - t_o)**2) * weight_team_ou * weight_factor
-                
+                    
+        # Both Teams to Score (BTTS) fit
+        if target_btts is not None:
+            p_btts = sum(p for (sc_h, sc_a), p in matrix.items() if sc_h > 0 and sc_a > 0)
+            if loss_type == "logloss":
+                error += -(target_btts * math.log(max(p_btts, eps)) + (1.0 - target_btts) * math.log(max(1.0 - p_btts, eps))) * weight_extra_markets
+            else:
+                error += ((p_btts - target_btts)**2) * weight_extra_markets
+
+        # Clean Sheet Thuis: P(a=0)
+        if target_clean_sheet_home is not None:
+            p_cs_h = sum(p for (sc_h, sc_a), p in matrix.items() if sc_a == 0)
+            if loss_type == "logloss":
+                error += -(target_clean_sheet_home * math.log(max(p_cs_h, eps)) + (1.0 - target_clean_sheet_home) * math.log(max(1.0 - p_cs_h, eps))) * weight_extra_markets
+            else:
+                error += ((p_cs_h - target_clean_sheet_home)**2) * weight_extra_markets
+
+        # Clean Sheet Uit: P(h=0)
+        if target_clean_sheet_away is not None:
+            p_cs_a = sum(p for (sc_h, sc_a), p in matrix.items() if sc_h == 0)
+            if loss_type == "logloss":
+                error += -(target_clean_sheet_away * math.log(max(p_cs_a, eps)) + (1.0 - target_clean_sheet_away) * math.log(max(1.0 - p_cs_a, eps))) * weight_extra_markets
+            else:
+                error += ((p_cs_a - target_clean_sheet_away)**2) * weight_extra_markets
+
+        # Lichte ρ-regularisatie: maakt het minimum uniek bij onderbepaalde (1X2-only) fits.
+        error += RHO_REG * (r ** 2)
+
         return error
 
     # Optimalisatie bounds
@@ -420,7 +564,8 @@ def bepaal_poisson_lambdas(target_h, target_d, target_a, target_ou=None, target_
     # Optimaliseer vanaf elk startpunt en bewaar de beste
     for i, start_pt in enumerate(start_points):
         try:
-            res = minimize(objective, start_pt, method='L-BFGS-B', bounds=bounds)
+            res = minimize(objective, start_pt, method='L-BFGS-B', bounds=bounds,
+                           options={'ftol': 1e-14, 'gtol': 1e-10, 'maxiter': 2000})
             if res.success and res.fun < best_loss:
                 best_loss = res.fun
                 best_params = res.x
@@ -477,7 +622,7 @@ def calc_ev_regular(pred_h, pred_a, matrix):
         ev += prob * pts
     return ev
 
-def calc_ev_motd(pred_h, pred_a, matrix):
+def calc_ev_motd(pred_h, pred_a, matrix, scorer_rate=None, pred_scorer_h=None, pred_scorer_a=None):
     """
     Berekent de verwachte waarde (Expected Value, EV) in punten voor de Wedstrijd van de Dag (MOTD),
     waarbij extra punten voor doelpuntenmakers (spitsen) worden meegerekend.
@@ -486,56 +631,72 @@ def calc_ev_motd(pred_h, pred_a, matrix):
     pred_h (int): Het voorspelde aantal doelpunten van het thuisteam.
     pred_a (int): Het voorspelde aantal doelpunten van het uitteam.
     matrix (dict): De berekende kansenmatrix voor alle uitslagen.
+    scorer_rate (float, optioneel): De scoringskans van de spits. Standaard SCORER_HIT_RATE.
+    pred_scorer_h (bool, optioneel): Voorspelling doelpuntenmaker thuis.
+    pred_scorer_a (bool, optioneel): Voorspelling doelpuntenmaker uit.
     
     Returns:
-    tuple: Een duo met (de verwachte punten, (thuis_scorer_tip, uit_scorer_tip)).
+    tuple: (totale_ev, (thuis_scorer_tip, uit_scorer_tip), score_ev, scorer_ev).
     """
-    pred_scorer_h = (pred_h > 0)
-    pred_scorer_a = (pred_a > 0)
+    if scorer_rate is None:
+        scorer_rate = SCORER_HIT_RATE
+        
+    if pred_scorer_h is None:
+        pred_scorer_h = (pred_h > 0)
+    if pred_scorer_a is None:
+        pred_scorer_a = (pred_a > 0)
+        
+    score_ev = 0.0
+    scorer_ev = 0.0
     
-    ev = 0
     for (act_h, act_a), prob in matrix.items():
-        pts = 0
+        # Wedstrijdresultaat punten
+        score_pts = 0
         if pred_h == act_h and pred_a == act_a:
-            pts += 12
+            score_pts += 12
         else:
             pred_toto = 1 if pred_h > pred_a else (-1 if pred_h < pred_a else 0)
             act_toto = 1 if act_h > act_a else (-1 if act_h < act_a else 0)
             if pred_toto == act_toto:
                 if pred_toto == 0:
-                    pts += 8
+                    score_pts += 8
                 else:
-                    pts += 6
+                    score_pts += 6
             
-            if pred_h == act_h: pts += 2
-            if pred_a == act_a: pts += 2
+            if pred_h == act_h: score_pts += 2
+            if pred_a == act_a: score_pts += 2
             
+        # Doelpuntenmaker punten
+        scorer_pts = 0
         if not pred_scorer_h:
-            if act_h == 0: pts += 4
+            if act_h == 0: scorer_pts += 4
         else:
-            if act_h > 0: pts += 4 * 0.35
+            if act_h > 0: scorer_pts += 4 * scorer_rate
             
         if not pred_scorer_a:
-            if act_a == 0: pts += 4
+            if act_a == 0: scorer_pts += 4
         else:
-            if act_a > 0: pts += 4 * 0.35
+            if act_a > 0: scorer_pts += 4 * scorer_rate
             
-        ev += prob * pts
+        score_ev += prob * score_pts
+        scorer_ev += prob * scorer_pts
         
-    return ev, (pred_scorer_h, pred_scorer_a)
+    total_ev = score_ev + scorer_ev
+    return total_ev, (pred_scorer_h, pred_scorer_a), score_ev, scorer_ev
 
-def calculate_actual_points(pred_h, pred_a, act_h, act_a, is_motd):
+
+def calculate_actual_points(pred_h, pred_a, act_h, act_a, is_motd, scorer_rate=None, pred_scorer_h=None, pred_scorer_a=None):
     """
     Bereken de behaalde punten voor een voorspelling tegen de werkelijke uitslag.
     """
     matrix = {(act_h, act_a): 1.0}
     if is_motd:
-        pts, _ = calc_ev_motd(pred_h, pred_a, matrix)
+        pts, _, _, _ = calc_ev_motd(pred_h, pred_a, matrix, scorer_rate=scorer_rate, pred_scorer_h=pred_scorer_h, pred_scorer_a=pred_scorer_a)
     else:
         pts = calc_ev_regular(pred_h, pred_a, matrix)
     return pts
 
-def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None, team_ou_home=None, team_ou_away=None, loss_type="logloss", overround_method="power", verbose=False, weight_match_ou=None, weight_team_ou=None, tiebreak="probability"):
+def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None, team_ou_home=None, team_ou_away=None, btts_prob=None, clean_sheet_home_prob=None, clean_sheet_away_prob=None, loss_type="logloss", overround_method="power", verbose=False, weight_match_ou=None, weight_team_ou=None, weight_extra_markets=None, tiebreak="probability", scorer_rate=None):
     """
     Berekent de optimale voorspelling door de uitslag te zoeken die de verwachte waarde (EV) maximaliseert.
     
@@ -547,19 +708,27 @@ def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None, team_ou_home=
     ou_probs (dict, optioneel): Kansen voor over/under grenzen.
     team_ou_home (dict, optioneel): Kansen voor team-specifieke over/under grenzen (thuis).
     team_ou_away (dict, optioneel): Kansen voor team-specifieke over/under grenzen (uit).
+    btts_prob (float, optioneel): De kans op beide teams scoren.
+    clean_sheet_home_prob (float, optioneel): De kans op clean sheet thuis.
+    clean_sheet_away_prob (float, optioneel): De kans op clean sheet uit.
     loss_type (str, optioneel): De te gebruiken verliesfunctie ('mse' of 'logloss'). Standaard 'logloss'.
     overround_method (str, optioneel): De te gebruiken normalisatiemethode ('linear' of 'power'). Standaard 'power'.
     verbose (bool, optioneel): Of er debug-logging getoond moet worden voor de fits. Standaard False.
     weight_match_ou (float, optioneel): Het gewicht voor de wedstrijd Over/Under fit-termen.
     weight_team_ou (float, optioneel): Het gewicht voor de team Over/Under fit-termen.
+    weight_extra_markets (float, optioneel): Het gewicht voor de extra markten fit-termen.
     tiebreak (str, optioneel): De te gebruiken tie-breaker strategie ('probability' of 'conservative'). Standaard 'probability'.
+    scorer_rate (float, optioneel): De scoringskans van de spits. Standaard SCORER_HIT_RATE.
     
     Returns:
     dict: Een woordenboek met alle resultaten, zoals genormaliseerde kansen, lambda's, rho,
           de geadviseerde uitslag, tips voor doelpuntenmakers en de maximale verwachte punten.
     """
+    if scorer_rate is None:
+        scorer_rate = SCORER_HIT_RATE
+        
     p_h, p_d, p_a = normaliseer_kansen(home_pct, draw_pct, away_pct, method=overround_method)
-    lam_h, lam_a, rho = bepaal_poisson_lambdas(p_h, p_d, p_a, ou_probs, target_team_ou_home=team_ou_home, target_team_ou_away=team_ou_away, loss_type=loss_type, verbose=verbose, weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou)
+    lam_h, lam_a, rho = bepaal_poisson_lambdas(p_h, p_d, p_a, ou_probs, target_team_ou_home=team_ou_home, target_team_ou_away=team_ou_away, target_btts=btts_prob, target_clean_sheet_home=clean_sheet_home_prob, target_clean_sheet_away=clean_sheet_away_prob, loss_type=loss_type, verbose=verbose, weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou, weight_extra_markets=weight_extra_markets)
     matrix = calc_matrix(lam_h, lam_a, rho)
     
     # Bepaal de dynamische EV-zoekruimte op basis van de berekende lambda's
@@ -577,14 +746,46 @@ def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None, team_ou_home=
         print(f"  [Verbose Raster] EV-zoekraster: 0-{max_score} voor beide teams | Buiten-raster-massa: {buiten_raster_massa*100:.2f}%")
         print(f"  [Verbose Tie-Break] Gekozen via tie-break: {tiebreak}")
         
+    # Bepaal optimale scorer tips voor thuis en uit (alleen relevant voor MOTD)
+    opt_sh = False
+    opt_sa = False
+    scorer_ev_h = 0.0
+    scorer_ev_a = 0.0
+    
+    if is_motd:
+        p_act_h_gt_0 = sum(prob for (act_h, act_a), prob in matrix.items() if act_h > 0)
+        p_act_a_gt_0 = sum(prob for (act_h, act_a), prob in matrix.items() if act_a > 0)
+        
+        # Thuis
+        ev_spits_h = 4 * scorer_rate * p_act_h_gt_0
+        ev_geen_h = 4 * (1.0 - p_act_h_gt_0)
+        if ev_spits_h >= ev_geen_h:
+            opt_sh = True
+            scorer_ev_h = ev_spits_h
+        else:
+            opt_sh = False
+            scorer_ev_h = ev_geen_h
+            
+        # Uit
+        ev_spits_a = 4 * scorer_rate * p_act_a_gt_0
+        ev_geen_a = 4 * (1.0 - p_act_a_gt_0)
+        if ev_spits_a >= ev_geen_a:
+            opt_sa = True
+            scorer_ev_a = ev_spits_a
+        else:
+            opt_sa = False
+            scorer_ev_a = ev_geen_a
+            
     alle_voorspellingen = []
     for h in range(max_score + 1):
         for a in range(max_score + 1):
             if is_motd:
-                ev, scorers = calc_ev_motd(h, a, matrix)
+                ev, scorers, score_ev, scorer_ev = calc_ev_motd(h, a, matrix, scorer_rate=scorer_rate, pred_scorer_h=opt_sh, pred_scorer_a=opt_sa)
             else:
                 ev = calc_ev_regular(h, a, matrix)
                 scorers = (False, False)
+                score_ev = ev
+                scorer_ev = 0.0
                 
             prob = matrix.get((h, a), 0.0)
             
@@ -592,7 +793,7 @@ def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None, team_ou_home=
             p_1pt = 0.0
             p_5pt = 0.0
             for (act_h, act_a), act_prob in matrix.items():
-                pts = calculate_actual_points(h, a, act_h, act_a, is_motd)
+                pts = calculate_actual_points(h, a, act_h, act_a, is_motd, scorer_rate=scorer_rate, pred_scorer_h=opt_sh, pred_scorer_a=opt_sa)
                 if pts >= 1.0:
                     p_1pt += act_prob
                 if pts >= 5.0:
@@ -603,12 +804,15 @@ def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None, team_ou_home=
                 "h": h,
                 "a": a,
                 "ev": ev,
+                "score_ev": score_ev,
+                "scorer_ev": scorer_ev,
                 "kans": prob * 100.0,
                 "p_exact": prob,
                 "p_1pt": p_1pt,
                 "p_5pt": p_5pt,
                 "scorers": scorers
             })
+
             
     # Deterministische tie-break sortering (gebaseerd op poule-scoring):
     # a) Hoogste EV (Expected Value)
@@ -650,24 +854,46 @@ def voorspel(home_pct, draw_pct, away_pct, is_motd, ou_probs=None, team_ou_home=
     if is_motd:
         scorer_thuis = "Spits (of penaltynemer)" if best_scorers[0] else "Geen score"
         scorer_uit = "Spits (of penaltynemer)" if best_scorers[1] else "Geen score"
-        uitleg = f"Maximale EV: {best_ev:.2f} verwachte punten (incl. doelpuntenmakers)."
+        best_score_ev = best_item["score_ev"]
+        best_scorer_ev = best_item["scorer_ev"]
+        uitleg = (
+            f"Maximale EV: {best_ev:.2f} verwachte punten (Score EV: {best_score_ev:.2f} pt, "
+            f"Scorer EV: {best_scorer_ev:.2f} pt | Factor: {scorer_rate:.2f})."
+        )
+        # Bereken of de tip afwijkt van de simpele regel (h > 0 / a > 0)
+        scorer_tip_onafhankelijk = (best_scorers[0] != (best_pred[0] > 0)) or (best_scorers[1] != (best_pred[1] > 0))
     else:
         scorer_thuis = ""
         scorer_uit = ""
+        best_score_ev = best_ev
+        best_scorer_ev = 0.0
         uitleg = f"Maximale EV: {best_ev:.2f} verwachte punten."
+        scorer_tip_onafhankelijk = False
+
+    # Toernooi tie-breaker-voorspellingen afgeleid uit het model (Prompt 13)
+    tie_breakers = bereken_tie_breakers(lam_h, lam_a)
 
     return {
         "genormaliseerd": (p_h, p_d, p_a),
         "lambda": (lam_h, lam_a),
         "rho": rho,
         "uitslag": uitslag,
+        "tie_breakers": tie_breakers,
         "scorer_thuis": scorer_thuis,
         "scorer_uit": scorer_uit,
         "uitleg": uitleg,
         "xpts": best_ev,
+        "score_ev": best_score_ev,
+        "scorer_ev": best_scorer_ev,
+        "scorer_rate": scorer_rate,
         "team_ou_home": team_ou_home,
         "team_ou_away": team_ou_away,
-        "top_5": top_5
+        "top_5": top_5,
+        "scorer_ev_thuis": scorer_ev_h if is_motd else 0.0,
+        "scorer_ev_uit": scorer_ev_a if is_motd else 0.0,
+        "scorer_tip_onafhankelijk": scorer_tip_onafhankelijk,
+        "scorer_thuis_bool": best_scorers[0] if is_motd else False,
+        "scorer_uit_bool": best_scorers[1] if is_motd else False
     }
 
 def print_resultaat(res, is_motd, toon_extra=False):
@@ -707,6 +933,11 @@ def print_resultaat(res, is_motd, toon_extra=False):
     if is_motd:
         print(f"  • {BOLD}Doelpuntenmaker Thuis:{RESET} {YELLOW}{res['scorer_thuis']}{RESET}")
         print(f"  • {BOLD}Doelpuntenmaker Uit:{RESET} {YELLOW}{res['scorer_uit']}{RESET}")
+        print(f"  • {BOLD}Verwachting apart:{RESET} Score EV: {YELLOW}{res.get('score_ev', 0.0):.2f}{RESET} pt | Scorer EV: {YELLOW}{res.get('scorer_ev', 0.0):.2f}{RESET} pt (Factor: {res.get('scorer_rate', SCORER_HIT_RATE):.2f})")
+        if res.get("scorer_tip_onafhankelijk"):
+            print(f"  • {CYAN}{BOLD}⚠️  Opmerking: Doelpuntenmaker-tip wijkt af van de uitslag-voorspelling!{RESET}")
+            print(f"    {CYAN}Uitleg: Zelfs bij de voorspelde uitslag ({res['uitslag']}) heeft de gekozen tip wiskundig een hogere EV door de algemene doelkansen.{RESET}")
+
     
     print(f"\n{BOLD}💡  BEREKENING:{RESET}")
     print(f"  {res['uitleg']}")
@@ -737,12 +968,20 @@ def print_resultaat(res, is_motd, toon_extra=False):
         print(f"  {u_val:<7} | {ev_val:<5} | {kans_val:<5} | {p5_val:<8} | {delta_colored}")
         
     if toon_extra:
-        print(f"\n{BOLD}⏱️  TIE-BREAKER EXTRA VRAGEN:{RESET}")
-        print(f"  • {BOLD}Minuut van het 1e toernooidoelpunt:{RESET} {YELLOW}31e minuut{RESET} (Mediaan)")
-        print(f"  • {BOLD}Minuut van de 1e gele kaart:{RESET} {YELLOW}36e minuut{RESET}")
-        print(f"  • {BOLD}Minuut van de 1e rode kaart:{RESET} {YELLOW}411e minuut{RESET}\n")
+        # Tie-breakers worden afgeleid uit het model (Prompt 13): ze variëren per
+        # wedstrijd op basis van de berekende λ's i.p.v. vaste constanten.
+        tb = res.get("tie_breakers") or bereken_tie_breakers(lam_h, lam_a)
+        rode_minuut = tb.get("rode_kaart_minuut")
+        rode_str = f"{rode_minuut}e minuut" if rode_minuut is not None else "Geen rode kaart (> 90e min)"
+        print(f"\n{BOLD}⏱️  TIE-BREAKER EXTRA VRAGEN (modelgebaseerd):{RESET}")
+        print(f"  • {BOLD}Minuut van het 1e toernooidoelpunt:{RESET} {YELLOW}{tb['eerste_doelpunt_minuut']}e minuut{RESET}")
+        print(f"    {CYAN}{tb['eerste_doelpunt_uitleg']}{RESET}")
+        print(f"  • {BOLD}Minuut van de 1e gele kaart:{RESET} {YELLOW}{tb['gele_kaart_minuut']}e minuut{RESET}")
+        print(f"    {CYAN}{tb['gele_kaart_uitleg']}{RESET}")
+        print(f"  • {BOLD}Minuut van de 1e rode kaart:{RESET} {YELLOW}{rode_str}{RESET}")
+        print(f"    {CYAN}{tb['rode_kaart_uitleg']}{RESET}\n")
 
-def interactieve_modus(toon_extra=False, loss_type="logloss", overround_method="power", verbose=False, weight_match_ou=None, weight_team_ou=None, tiebreak="probability"):
+def interactieve_modus(toon_extra=False, loss_type="logloss", overround_method="power", verbose=False, weight_match_ou=None, weight_team_ou=None, tiebreak="probability", scorer_rate=None):
     """
     Start een interactief vraag-en-antwoordscherm in de terminal om een voorspelling voor één wedstrijd te berekenen.
     
@@ -754,6 +993,7 @@ def interactieve_modus(toon_extra=False, loss_type="logloss", overround_method="
     weight_match_ou (float, optioneel): Het gewicht voor de wedstrijd Over/Under fit-termen.
     weight_team_ou (float, optioneel): Het gewicht voor de team Over/Under fit-termen.
     tiebreak (str, optioneel): De te gebruiken tie-breaker strategie. Standaard 'probability'.
+    scorer_rate (float, optioneel): De scoringskans van de spits. Standaard SCORER_HIT_RATE.
     """
     print_header()
     
@@ -768,6 +1008,21 @@ def interactieve_modus(toon_extra=False, loss_type="logloss", overround_method="
         else:
             print(f"{RED}Vul alstublieft 'ja' of 'nee' in.{RESET}")
             
+    if is_motd:
+        default_sr = scorer_rate if scorer_rate is not None else SCORER_HIT_RATE
+        while True:
+            sr_in = input(f"  Kans dat spits scoort bij teamdoelpunt [standaard: {default_sr}]: ").strip()
+            if not sr_in:
+                scorer_rate = default_sr
+                break
+            try:
+                scorer_rate = float(sr_in)
+                if not (0.0 <= scorer_rate <= 1.0):
+                    raise ValueError("Kans moet tussen 0.0 en 1.0 liggen")
+                break
+            except ValueError as e:
+                print(f"  {RED}❌ {e}. Probeer het opnieuw.{RESET}")
+
     print(f"\n{BOLD}Voer de winstkansen in (bijv. 45 of 45% of 0.45):{RESET}")
     while True:
         try:
@@ -793,8 +1048,9 @@ def interactieve_modus(toon_extra=False, loss_type="logloss", overround_method="
         except ValueError as e:
             print(f"  {RED}❌ {e}. Probeer het opnieuw.{RESET}")
             
-    res = voorspel(home, draw, away, is_motd, loss_type=loss_type, overround_method=overround_method, verbose=verbose, weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou, tiebreak=tiebreak)
+    res = voorspel(home, draw, away, is_motd, loss_type=loss_type, overround_method=overround_method, verbose=verbose, weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou, tiebreak=tiebreak, scorer_rate=scorer_rate)
     print_resultaat(res, is_motd, toon_extra=toon_extra)
+
 
 
 MOTD_LIST = [
@@ -954,6 +1210,9 @@ def haal_polymarket_wedstrijden(overround_method="power", verbose=False):
             team_ou_home_raw = {}
             team_ou_away_raw = {}
             non_draw_markets = []
+            btts_markets = []
+            cs_home_markets = []
+            cs_away_markets = []
             
             for m in markets:
                 q = m.get("question", "").lower()
@@ -964,6 +1223,12 @@ def haal_polymarket_wedstrijden(overround_method="power", verbose=False):
                 if len(prices) < 1:
                     continue
                 yes_price = float(prices[0])
+                no_price = float(prices[1]) if len(prices) >= 2 else 1.0 - yes_price
+                liq = float(m.get("liquidityNum") or m.get("liquidity") or 0.0)
+                try:
+                    spread = float(m.get("spread")) if m.get("spread") is not None else None
+                except (ValueError, TypeError):
+                    spread = None
                 
                 # Probeer eerst team-specifiek O/U te herkennen
                 is_team_ou = False
@@ -995,11 +1260,6 @@ def haal_polymarket_wedstrijden(overround_method="power", verbose=False):
                         if sc_h > 0:
                             if line not in team_ou_home_raw:
                                 team_ou_home_raw[line] = {'under': None, 'over': None, 'under_liq': 0.0, 'over_liq': 0.0, 'under_spread': None, 'over_spread': None}
-                            liq = float(m.get("liquidityNum") or m.get("liquidity") or 0.0)
-                            try:
-                                spread = float(m.get("spread")) if m.get("spread") is not None else None
-                            except (ValueError, TypeError):
-                                spread = None
                             if type_ou == 'under':
                                 team_ou_home_raw[line]['under'] = yes_price
                                 team_ou_home_raw[line]['under_liq'] = liq
@@ -1011,11 +1271,6 @@ def haal_polymarket_wedstrijden(overround_method="power", verbose=False):
                         else:
                             if line not in team_ou_away_raw:
                                 team_ou_away_raw[line] = {'under': None, 'over': None, 'under_liq': 0.0, 'over_liq': 0.0, 'under_spread': None, 'over_spread': None}
-                            liq = float(m.get("liquidityNum") or m.get("liquidity") or 0.0)
-                            try:
-                                spread = float(m.get("spread")) if m.get("spread") is not None else None
-                            except (ValueError, TypeError):
-                                spread = None
                             if type_ou == 'under':
                                 team_ou_away_raw[line]['under'] = yes_price
                                 team_ou_away_raw[line]['under_liq'] = liq
@@ -1035,11 +1290,6 @@ def haal_polymarket_wedstrijden(overround_method="power", verbose=False):
                         line = float(match_ou.group(2))
                         if line not in ou_raw:
                             ou_raw[line] = {'under': None, 'over': None, 'under_liq': 0.0, 'over_liq': 0.0, 'under_spread': None, 'over_spread': None}
-                        liq = float(m.get("liquidityNum") or m.get("liquidity") or 0.0)
-                        try:
-                            spread = float(m.get("spread")) if m.get("spread") is not None else None
-                        except (ValueError, TypeError):
-                            spread = None
                         if type_ou == 'under':
                             ou_raw[line]['under'] = yes_price
                             ou_raw[line]['under_liq'] = liq
@@ -1048,6 +1298,18 @@ def haal_polymarket_wedstrijden(overround_method="power", verbose=False):
                             ou_raw[line]['over'] = yes_price
                             ou_raw[line]['over_liq'] = liq
                             ou_raw[line]['over_spread'] = spread
+                    elif "both teams to score" in q:
+                        btts_markets.append((yes_price, no_price, liq, spread, m.get("question", "")))
+                    elif any(term in q for term in ["clean sheet", "win to nil", "win to-nil", "shutout"]):
+                        home_words = set(re.findall(r'\w+', home_team.lower()))
+                        away_words = set(re.findall(r'\w+', away_team.lower()))
+                        q_words = set(re.findall(r'\w+', q))
+                        sc_h = len(q_words.intersection(home_words))
+                        sc_a = len(q_words.intersection(away_words))
+                        if sc_h > sc_a:
+                            cs_home_markets.append((yes_price, no_price, liq, spread, m.get("question", "")))
+                        elif sc_a > sc_h:
+                            cs_away_markets.append((yes_price, no_price, liq, spread, m.get("question", "")))
                     elif "draw" in q:
                         draw_prob = yes_price
                     else:
@@ -1101,6 +1363,49 @@ def haal_polymarket_wedstrijden(overround_method="power", verbose=False):
                     "Team O/U Uit", home_team, away_team, verbose=verbose
                 )
                 
+                # Selecteer en normaliseer extra markten
+                btts_prob = None
+                if btts_markets:
+                    btts_markets.sort(key=lambda x: -x[2])
+                    best_btts = btts_markets[0]
+                    yes_p, no_p = best_btts[0], best_btts[1]
+                    if overround_method == "power":
+                        norm = normaliseer_kansen_power([yes_p, no_p])
+                        btts_prob = norm[0]
+                    else:
+                        tot = yes_p + no_p
+                        btts_prob = yes_p / tot if tot > 0 else yes_p
+                    if verbose:
+                        print(f"  [Verbose Extra] BTTS geselecteerd voor {home_team} vs. {away_team}: '{best_btts[4]}' (kans: {btts_prob*100:.1f}%, liq: {best_btts[2]:.2f})")
+
+                clean_sheet_home_prob = None
+                if cs_home_markets:
+                    cs_home_markets.sort(key=lambda x: -x[2])
+                    best_cs_h = cs_home_markets[0]
+                    yes_p, no_p = best_cs_h[0], best_cs_h[1]
+                    if overround_method == "power":
+                        norm = normaliseer_kansen_power([yes_p, no_p])
+                        clean_sheet_home_prob = norm[0]
+                    else:
+                        tot = yes_p + no_p
+                        clean_sheet_home_prob = yes_p / tot if tot > 0 else yes_p
+                    if verbose:
+                        print(f"  [Verbose Extra] CS Thuis geselecteerd voor {home_team} vs. {away_team}: '{best_cs_h[4]}' (kans: {clean_sheet_home_prob*100:.1f}%, liq: {best_cs_h[2]:.2f})")
+
+                clean_sheet_away_prob = None
+                if cs_away_markets:
+                    cs_away_markets.sort(key=lambda x: -x[2])
+                    best_cs_a = cs_away_markets[0]
+                    yes_p, no_p = best_cs_a[0], best_cs_a[1]
+                    if overround_method == "power":
+                        norm = normaliseer_kansen_power([yes_p, no_p])
+                        clean_sheet_away_prob = norm[0]
+                    else:
+                        tot = yes_p + no_p
+                        clean_sheet_away_prob = yes_p / tot if tot > 0 else yes_p
+                    if verbose:
+                        print(f"  [Verbose Extra] CS Uit geselecteerd voor {home_team} vs. {away_team}: '{best_cs_a[4]}' (kans: {clean_sheet_away_prob*100:.1f}%, liq: {best_cs_a[2]:.2f})")
+
                 parsed_matches.append({
                     "title": team_part,
                     "home": home_team,
@@ -1111,6 +1416,9 @@ def haal_polymarket_wedstrijden(overround_method="power", verbose=False):
                     "ou_probs": final_ou,
                     "team_ou_home": final_team_ou_home,
                     "team_ou_away": final_team_ou_away,
+                    "btts_prob": btts_prob,
+                    "clean_sheet_home_prob": clean_sheet_home_prob,
+                    "clean_sheet_away_prob": clean_sheet_away_prob,
                     "date": e.get("endDate", ""),
                     "is_motd": is_motd_match(home_team, away_team)
                 })
@@ -1187,16 +1495,371 @@ def exporteer_naar_bestand(alle_res, bestandsnaam, inclusief_top5=False):
     except Exception as e:
         print(f"{RED}❌ Fout bij opslaan van bestand: {e}{RESET}\n")
 
-def exporteer_naar_html(alle_res, bestandsnaam):
+def _calculator_core_js():
+    """
+    Genereert de gedeelde JavaScript 'calculator core' die de Python-functie voorspel()
+    1-op-1 spiegelt (log-loss objective, power-overround, multi-start optimalisatie,
+    dynamisch EV-raster, tie-break logica, MOTD-scorer-optimalisatie en model-tie-breakers).
+
+    Dit is de single source of truth voor de browser-wiskunde: dezelfde string wordt zowel
+    in index.html ingebed als door test_js_parity.py via Node uitgevoerd. Zo blijft de
+    JS-rekenmachine identiek aan de CLI (zie acceptatiecriteria Prompt 14).
+
+    De module-constanten worden hier ingevuld zodat de gewichten nooit kunnen driften.
+    """
+    js = r'''
+        // =====================================================================
+        // CALCULATOR CORE — automatisch gegenereerd vanuit polymarket_voorspeller.py
+        // (functie _calculator_core_js). NIET handmatig aanpassen: bewerk de Python-bron.
+        // Spiegelt voorspel() zodat de browser identieke adviezen geeft als de CLI.
+        // =====================================================================
+        const WEIGHT_MATCH_OU = __WEIGHT_MATCH_OU__;
+        const WEIGHT_TEAM_OU = __WEIGHT_TEAM_OU__;
+        const WEIGHT_EXTRA_MARKETS = __WEIGHT_EXTRA_MARKETS__;
+        const SCORER_HIT_RATE = __SCORER_HIT_RATE__;
+        const FIRST_YELLOW_BASE_MIN = __FIRST_YELLOW_BASE_MIN__;
+        const FIRST_YELLOW_REF_LAMBDA = __FIRST_YELLOW_REF_LAMBDA__;
+        const RED_CARD_RATE = __RED_CARD_RATE__;
+        const RED_CARD_THRESHOLD = __RED_CARD_THRESHOLD__;
+        const RHO_REG = __RHO_REG__;
+
+        function factorial(n) { let r = 1; for (let i = 2; i <= n; i++) r *= i; return r; }
+        function poisson(lam, k) { return Math.exp(-lam) * Math.pow(lam, k) / factorial(k); }
+        function dixonColesTau(h, a, lh, la, rho) {
+            if (h === 0 && a === 0) return 1.0 - lh * la * rho;
+            if (h === 1 && a === 0) return 1.0 + la * rho;
+            if (h === 0 && a === 1) return 1.0 + lh * rho;
+            if (h === 1 && a === 1) return 1.0 - rho;
+            return 1.0;
+        }
+        function calcMatrix(lh, la, rho) {
+            if (rho === undefined) rho = 0.0;
+            let m = [], tot = 0.0;
+            for (let h = 0; h < 10; h++) {
+                m[h] = [];
+                for (let a = 0; a < 10; a++) {
+                    let p = poisson(lh, h) * poisson(la, a) * dixonColesTau(h, a, lh, la, rho);
+                    p = Math.max(0.0, p); m[h][a] = p; tot += p;
+                }
+            }
+            if (tot > 0.0) { for (let h = 0; h < 10; h++) for (let a = 0; a < 10; a++) m[h][a] /= tot; }
+            return m;
+        }
+        function get1X2(m) {
+            let hw = 0.0, d = 0.0, aw = 0.0;
+            for (let h = 0; h < 10; h++) for (let a = 0; a < 10; a++) {
+                let p = m[h][a];
+                if (h > a) hw += p; else if (h === a) d += p; else aw += p;
+            }
+            return [hw, d, aw];
+        }
+        // Power-method overround (spiegelt normaliseer_kansen_power)
+        function normPower(kansen, targetSum) {
+            if (targetSum === undefined) targetSum = 1.0;
+            kansen = kansen.map(p => Math.max(0.0001, Math.min(0.9999, p)));
+            let som = kansen.reduce((s, p) => s + p, 0);
+            if (som === 0) return kansen.map(() => 1.0 / kansen.length);
+            if (kansen.length === 1) return [targetSum];
+            if (Math.abs(som - targetSum) < 1e-9) return kansen.map(p => p * (targetSum / som));
+            let kLow, kHigh;
+            if (som > targetSum) {
+                kLow = 1.0; kHigh = 2.0;
+                for (let i = 0; i < 50; i++) { let s = kansen.reduce((acc, p) => acc + Math.pow(p, kHigh), 0); if (s < targetSum) break; kHigh *= 2.0; }
+            } else {
+                kLow = 0.001; kHigh = 1.0;
+                for (let i = 0; i < 50; i++) { let s = kansen.reduce((acc, p) => acc + Math.pow(p, kLow), 0); if (s > targetSum) break; kLow /= 2.0; }
+            }
+            let k = (kLow + kHigh) / 2.0, converged = false;
+            for (let i = 0; i < 100; i++) {
+                let kMid = (kLow + kHigh) / 2.0;
+                let s = kansen.reduce((acc, p) => acc + Math.pow(p, kMid), 0);
+                if (Math.abs(s - targetSum) < 1e-12) { k = kMid; converged = true; break; }
+                if (s > targetSum) kLow = kMid; else kHigh = kMid;
+            }
+            if (!converged) k = (kLow + kHigh) / 2.0;
+            let result = kansen.map(p => Math.pow(p, k));
+            let sRes = result.reduce((s, r) => s + r, 0);
+            if (sRes > 0) result = result.map(r => r * (targetSum / sRes));
+            return result;
+        }
+        function normaliseer1X2(home, draw, away, method) {
+            let isPct = (home > 1.0 || draw > 1.0 || away > 1.0 || (home + draw + away) > 1.5);
+            let h = isPct ? home / 100.0 : home, d = isPct ? draw / 100.0 : draw, a = isPct ? away / 100.0 : away;
+            if (method === 'power') { let n = normPower([h, d, a], 1.0); return [n[0], n[1], n[2]]; }
+            let tot = h + d + a; if (tot === 0) return [0, 0, 0]; return [h / tot, d / tot, a / tot];
+        }
+        // Over/Under fit-term (spiegelt de O/U-lussen in bepaal_poisson_lambdas)
+        function ouError(matrix, lines, kind, lossType, weight, eps) {
+            if (!lines) return 0.0;
+            let keys = Object.keys(lines); if (keys.length === 0) return 0.0;
+            let useRel = keys.length > 1, err = 0.0;
+            for (let key of keys) {
+                let line = parseFloat(key); let vals = lines[key]; let tU = vals[0], tO = vals[1];
+                let u = 0.0, o = 0.0;
+                for (let sh = 0; sh < 10; sh++) for (let sa = 0; sa < 10; sa++) {
+                    let p = matrix[sh][sa];
+                    let metric = (kind === 'match') ? (sh + sa) : (kind === 'home' ? sh : sa);
+                    if (metric < line) u += p;
+                    if (metric > line) o += p;
+                }
+                let wf = 1.0;
+                if (useRel) {
+                    if (vals.length >= 3 && vals[2] != null) wf = 1.0 / Math.max(vals[2], 1e-4);
+                    else { let tot = tU + tO; if (tot > 0) { let pu = tU / tot, po = tO / tot; let vol = Math.sqrt(Math.max(pu * po, 1e-6)); wf = 0.5 / vol; } }
+                }
+                if (lossType === 'logloss') err += -(tU * Math.log(Math.max(u, eps)) + tO * Math.log(Math.max(o, eps))) * weight * wf;
+                else err += (Math.pow(u - tU, 2) + Math.pow(o - tO, 2)) * weight * wf;
+            }
+            return err;
+        }
+        function objective(params, t) {
+            let lh = Math.max(0.05, Math.min(params[0], 5.0));
+            let la = Math.max(0.05, Math.min(params[1], 5.0));
+            let r = Math.max(-0.25, Math.min(params[2], 0.10));
+            let matrix = calcMatrix(lh, la, r);
+            let g = get1X2(matrix); let h = g[0], d = g[1], a = g[2];
+            let eps = 1e-15, error;
+            if (t.loss_type === 'logloss') error = -(t.target_h * Math.log(Math.max(h, eps)) + t.target_d * Math.log(Math.max(d, eps)) + t.target_a * Math.log(Math.max(a, eps)));
+            else error = Math.pow(h - t.target_h, 2) + Math.pow(d - t.target_d, 2) + Math.pow(a - t.target_a, 2);
+            error += ouError(matrix, t.ou, 'match', t.loss_type, t.weight_match_ou, eps);
+            error += ouError(matrix, t.team_ou_home, 'home', t.loss_type, t.weight_team_ou, eps);
+            error += ouError(matrix, t.team_ou_away, 'away', t.loss_type, t.weight_team_ou, eps);
+            if (t.btts != null) {
+                let p = 0.0; for (let sh = 0; sh < 10; sh++) for (let sa = 0; sa < 10; sa++) { if (sh > 0 && sa > 0) p += matrix[sh][sa]; }
+                if (t.loss_type === 'logloss') error += -(t.btts * Math.log(Math.max(p, eps)) + (1.0 - t.btts) * Math.log(Math.max(1.0 - p, eps))) * t.weight_extra_markets;
+                else error += Math.pow(p - t.btts, 2) * t.weight_extra_markets;
+            }
+            if (t.cs_home != null) {
+                let p = 0.0; for (let sh = 0; sh < 10; sh++) for (let sa = 0; sa < 10; sa++) { if (sa === 0) p += matrix[sh][sa]; }
+                if (t.loss_type === 'logloss') error += -(t.cs_home * Math.log(Math.max(p, eps)) + (1.0 - t.cs_home) * Math.log(Math.max(1.0 - p, eps))) * t.weight_extra_markets;
+                else error += Math.pow(p - t.cs_home, 2) * t.weight_extra_markets;
+            }
+            if (t.cs_away != null) {
+                let p = 0.0; for (let sh = 0; sh < 10; sh++) for (let sa = 0; sa < 10; sa++) { if (sh === 0) p += matrix[sh][sa]; }
+                if (t.loss_type === 'logloss') error += -(t.cs_away * Math.log(Math.max(p, eps)) + (1.0 - t.cs_away) * Math.log(Math.max(1.0 - p, eps))) * t.weight_extra_markets;
+                else error += Math.pow(p - t.cs_away, 2) * t.weight_extra_markets;
+            }
+            // Lichte ρ-regularisatie: maakt het minimum uniek bij onderbepaalde (1X2-only) fits.
+            error += RHO_REG * (r * r);
+            return error;
+        }
+        function nelderMead(start, evalFunc) {
+            const clip = (p) => [Math.max(0.05, Math.min(p[0], 5.0)), Math.max(0.05, Math.min(p[1], 5.0)), Math.max(-0.25, Math.min(p[2], 0.10))];
+            let simplex = [
+                [start[0], start[1], start[2]],
+                [start[0] + 0.05 * Math.abs(start[0]) + 1e-4, start[1], start[2]],
+                [start[0], start[1] + 0.05 * Math.abs(start[1]) + 1e-4, start[2]],
+                [start[0], start[1], start[2] + 0.05]
+            ];
+            for (let i = 0; i < 4; i++) simplex[i] = clip(simplex[i]);
+            let values = simplex.map(p => evalFunc(p));
+            const maxIter = 2000, tol = 1e-16, alpha = 1.0, gamma = 2.0, beta = 0.5, sigma = 0.5;
+            for (let iter = 0; iter < maxIter; iter++) {
+                let idx = [0, 1, 2, 3]; idx.sort((x, y) => values[x] - values[y]);
+                simplex = idx.map(i => simplex[i]); values = idx.map(i => values[i]);
+                if (Math.abs(values[3] - values[0]) < tol) break;
+                let c = [0, 0, 0]; for (let j = 0; j < 3; j++) { c[0] += simplex[j][0]; c[1] += simplex[j][1]; c[2] += simplex[j][2]; } c = c.map(v => v / 3);
+                let refl = clip([c[0] + alpha * (c[0] - simplex[3][0]), c[1] + alpha * (c[1] - simplex[3][1]), c[2] + alpha * (c[2] - simplex[3][2])]);
+                let fR = evalFunc(refl);
+                if (fR < values[1] && fR >= values[0]) { simplex[3] = refl; values[3] = fR; continue; }
+                if (fR < values[0]) {
+                    let ex = clip([c[0] + gamma * (refl[0] - c[0]), c[1] + gamma * (refl[1] - c[1]), c[2] + gamma * (refl[2] - c[2])]);
+                    let fE = evalFunc(ex);
+                    if (fE < fR) { simplex[3] = ex; values[3] = fE; } else { simplex[3] = refl; values[3] = fR; }
+                    continue;
+                }
+                let contracted;
+                if (fR < values[3]) {
+                    contracted = clip([c[0] + beta * (refl[0] - c[0]), c[1] + beta * (refl[1] - c[1]), c[2] + beta * (refl[2] - c[2])]);
+                    let fC = evalFunc(contracted);
+                    if (fC <= fR) { simplex[3] = contracted; values[3] = fC; continue; }
+                } else {
+                    contracted = clip([c[0] + beta * (simplex[3][0] - c[0]), c[1] + beta * (simplex[3][1] - c[1]), c[2] + beta * (simplex[3][2] - c[2])]);
+                    let fC = evalFunc(contracted);
+                    if (fC < values[3]) { simplex[3] = contracted; values[3] = fC; continue; }
+                }
+                for (let i = 1; i < 4; i++) {
+                    simplex[i] = clip([simplex[0][0] + sigma * (simplex[i][0] - simplex[0][0]), simplex[0][1] + sigma * (simplex[i][1] - simplex[0][1]), simplex[0][2] + sigma * (simplex[i][2] - simplex[0][2])]);
+                    values[i] = evalFunc(simplex[i]);
+                }
+            }
+            let idx = [0, 1, 2, 3]; idx.sort((x, y) => values[x] - values[y]);
+            return clip(simplex[idx[0]]);
+        }
+        // Multi-start optimalisatie. De starts (standaard + Maher + deterministische spreiding)
+        // convergeren alle naar het globale optimum, dus de keuze met laagste loss is
+        // identiek aan het L-BFGS-B-resultaat van de Python-implementatie.
+        function optimize(t) {
+            let starts = [[1.3, 1.0, -0.05]];
+            let mh = -Math.log(Math.max(0.01, Math.min(0.99, t.target_d + t.target_a)));
+            let ma = -Math.log(Math.max(0.01, Math.min(0.99, t.target_h + t.target_d)));
+            mh = Math.max(0.05, Math.min(mh, 5.0)); ma = Math.max(0.05, Math.min(ma, 5.0));
+            starts.push([mh, ma, -0.05]);
+            starts.push([0.5, 0.5, -0.05]); starts.push([2.5, 1.5, -0.10]); starts.push([1.0, 2.5, 0.00]);
+            starts.push([3.5, 0.8, -0.15]); starts.push([0.3, 3.0, 0.05]);
+            let evalFunc = (p) => objective(p, t);
+            let best = null, bestLoss = Infinity;
+            for (let s of starts) { let res = nelderMead(s, evalFunc); let l = evalFunc(res); if (l < bestLoss) { bestLoss = l; best = res; } }
+            return best;
+        }
+        function calcEvRegular(ph, pa, m) {
+            let ev = 0.0;
+            for (let ah = 0; ah < 10; ah++) for (let aa = 0; aa < 10; aa++) {
+                let prob = m[ah][aa], pts = 0;
+                if (ph === ah && pa === aa) pts += 10;
+                else { let pt = ph > pa ? 1 : (ph < pa ? -1 : 0); let at = ah > aa ? 1 : (ah < aa ? -1 : 0); if (pt === at) pts += (pt === 0) ? 7 : 5; if (ph === ah) pts += 2; if (pa === aa) pts += 2; }
+                ev += prob * pts;
+            }
+            return ev;
+        }
+        function calcEvMotd(ph, pa, m, scorerRate, psh, psa) {
+            if (scorerRate === undefined) scorerRate = SCORER_HIT_RATE;
+            if (psh === undefined || psh === null) psh = (ph > 0);
+            if (psa === undefined || psa === null) psa = (pa > 0);
+            let scoreEv = 0.0, scorerEv = 0.0;
+            for (let ah = 0; ah < 10; ah++) for (let aa = 0; aa < 10; aa++) {
+                let prob = m[ah][aa], sp = 0;
+                if (ph === ah && pa === aa) sp += 12;
+                else { let pt = ph > pa ? 1 : (ph < pa ? -1 : 0); let at = ah > aa ? 1 : (ah < aa ? -1 : 0); if (pt === at) sp += (pt === 0) ? 8 : 6; if (ph === ah) sp += 2; if (pa === aa) sp += 2; }
+                let scp = 0;
+                if (!psh) { if (ah === 0) scp += 4; } else { if (ah > 0) scp += 4 * scorerRate; }
+                if (!psa) { if (aa === 0) scp += 4; } else { if (aa > 0) scp += 4 * scorerRate; }
+                scoreEv += prob * sp; scorerEv += prob * scp;
+            }
+            return [scoreEv + scorerEv, [psh, psa], scoreEv, scorerEv];
+        }
+        function calcActualPoints(ph, pa, ah, aa, isMotd, scorerRate, psh, psa) {
+            let pts = 0;
+            if (ph === ah && pa === aa) pts += isMotd ? 12 : 10;
+            else {
+                let pt = ph > pa ? 1 : (ph < pa ? -1 : 0); let at = ah > aa ? 1 : (ah < aa ? -1 : 0);
+                if (pt === at) pts += isMotd ? ((pt === 0) ? 8 : 6) : ((pt === 0) ? 7 : 5);
+                if (ph === ah) pts += 2; if (pa === aa) pts += 2;
+            }
+            if (isMotd) {
+                if (!psh) { if (ah === 0) pts += 4; } else { if (ah > 0) pts += 4 * scorerRate; }
+                if (!psa) { if (aa === 0) pts += 4; } else { if (aa > 0) pts += 4 * scorerRate; }
+            }
+            return pts;
+        }
+        // Modelgebaseerde tie-breakers (spiegelt bereken_tie_breakers)
+        function berekenTieBreakers(lh, la) {
+            let lamTotal = Math.max(lh + la, 1e-9);
+            let eersteDoelpunt = Math.round(90.0 * (1.0 - Math.log(2.0)) / lamTotal);
+            eersteDoelpunt = Math.max(1, Math.min(90, eersteDoelpunt));
+            let geleKaart = Math.round(FIRST_YELLOW_BASE_MIN * (FIRST_YELLOW_REF_LAMBDA / lamTotal));
+            geleKaart = Math.max(1, Math.min(90, geleKaart));
+            let effRed = RED_CARD_RATE * (lamTotal / FIRST_YELLOW_REF_LAMBDA);
+            let pRed = 1.0 - Math.exp(-effRed);
+            let rodeKaart = null;
+            if (pRed >= RED_CARD_THRESHOLD) rodeKaart = Math.max(1, Math.min(90, Math.round(90.0 * (1.0 - Math.log(2.0)) / effRed)));
+            return { eerste_doelpunt_minuut: eersteDoelpunt, gele_kaart_minuut: geleKaart, rode_kaart_minuut: rodeKaart, rode_kaart_kans: pRed };
+        }
+        function massaBuiten(m, maxScore) {
+            let s = 0.0; for (let h = 0; h < 10; h++) for (let a = 0; a < 10; a++) { if (h > maxScore || a > maxScore) s += m[h][a]; } return s;
+        }
+        function cmpDesc(a, b, keyFn) { let ka = keyFn(a), kb = keyFn(b); for (let i = 0; i < ka.length; i++) { if (ka[i] !== kb[i]) return kb[i] - ka[i]; } return 0; }
+        // Hoofdfunctie — spiegelt voorspel(). Input/Output-keys komen overeen met de Python-dict.
+        function predictMatch(inp) {
+            let lossType = inp.loss_type || 'logloss';
+            let overround = inp.overround_method || 'power';
+            let scorerRate = (inp.scorer_rate != null) ? inp.scorer_rate : SCORER_HIT_RATE;
+            let wMatch = (inp.weight_match_ou != null) ? inp.weight_match_ou : WEIGHT_MATCH_OU;
+            let wTeam = (inp.weight_team_ou != null) ? inp.weight_team_ou : WEIGHT_TEAM_OU;
+            let wExtra = (inp.weight_extra_markets != null) ? inp.weight_extra_markets : WEIGHT_EXTRA_MARKETS;
+            let tiebreak = inp.tiebreak || 'probability';
+            let isMotd = !!inp.is_motd;
+            let g = normaliseer1X2(inp.home_pct, inp.draw_pct, inp.away_pct, overround);
+            let pH = g[0], pD = g[1], pA = g[2];
+            let t = {
+                target_h: pH, target_d: pD, target_a: pA,
+                ou: inp.ou_probs || null, team_ou_home: inp.team_ou_home || null, team_ou_away: inp.team_ou_away || null,
+                btts: (inp.btts_prob != null ? inp.btts_prob : null),
+                cs_home: (inp.clean_sheet_home_prob != null ? inp.clean_sheet_home_prob : null),
+                cs_away: (inp.clean_sheet_away_prob != null ? inp.clean_sheet_away_prob : null),
+                loss_type: lossType, weight_match_ou: wMatch, weight_team_ou: wTeam, weight_extra_markets: wExtra
+            };
+            let opt = optimize(t); let lamH = opt[0], lamA = opt[1], rho = opt[2];
+            let matrix = calcMatrix(lamH, lamA, rho);
+            let maxScore = Math.min(9, Math.ceil(Math.max(lamH, lamA) + 2));
+            let buiten = massaBuiten(matrix, maxScore);
+            if (buiten > 0.01 && maxScore < 9) { maxScore += 1; buiten = massaBuiten(matrix, maxScore); }
+            let optSh = false, optSa = false, scorerEvH = 0.0, scorerEvA = 0.0;
+            if (isMotd) {
+                let pHgt = 0.0, pAgt = 0.0;
+                for (let ah = 0; ah < 10; ah++) for (let aa = 0; aa < 10; aa++) { let p = matrix[ah][aa]; if (ah > 0) pHgt += p; if (aa > 0) pAgt += p; }
+                let evSpitsH = 4 * scorerRate * pHgt, evGeenH = 4 * (1.0 - pHgt);
+                if (evSpitsH >= evGeenH) { optSh = true; scorerEvH = evSpitsH; } else { optSh = false; scorerEvH = evGeenH; }
+                let evSpitsA = 4 * scorerRate * pAgt, evGeenA = 4 * (1.0 - pAgt);
+                if (evSpitsA >= evGeenA) { optSa = true; scorerEvA = evSpitsA; } else { optSa = false; scorerEvA = evGeenA; }
+            }
+            let preds = [];
+            for (let h = 0; h <= maxScore; h++) for (let a = 0; a <= maxScore; a++) {
+                let ev, scoreEv, scorerEv, scorers;
+                if (isMotd) { let r = calcEvMotd(h, a, matrix, scorerRate, optSh, optSa); ev = r[0]; scorers = r[1]; scoreEv = r[2]; scorerEv = r[3]; }
+                else { ev = calcEvRegular(h, a, matrix); scorers = [false, false]; scoreEv = ev; scorerEv = 0.0; }
+                let prob = matrix[h][a] || 0.0;
+                let p1 = 0.0, p5 = 0.0;
+                for (let ah = 0; ah < 10; ah++) for (let aa = 0; aa < 10; aa++) {
+                    let ap = matrix[ah][aa];
+                    let pts = calcActualPoints(h, a, ah, aa, isMotd, scorerRate, optSh, optSa);
+                    if (pts >= 1.0) p1 += ap; if (pts >= 5.0) p5 += ap;
+                }
+                preds.push({ uitslag: h + '-' + a, h: h, a: a, ev: ev, score_ev: scoreEv, scorer_ev: scorerEv, kans: prob * 100.0, p_exact: prob, p_1pt: p1, p_5pt: p5, scorers: scorers });
+            }
+            let keyFn;
+            if (tiebreak === 'conservative') keyFn = (x) => [x.ev, -(x.h + x.a), -x.h, x.p_exact, x.p_5pt];
+            else keyFn = (x) => [x.ev, x.p_exact, x.p_5pt, -(x.h + x.a), -x.h];
+            preds.sort((a, b) => cmpDesc(a, b, keyFn));
+            let secondBest = preds.length > 1 ? preds[1].ev : 0.0;
+            preds.forEach(p => { p.delta_ev = p.ev - secondBest; });
+            let top5 = preds.slice(0, 5);
+            let best = preds[0];
+            let result = {
+                genormaliseerd: [pH, pD, pA], lambda: [lamH, lamA], rho: rho, uitslag: best.h + '-' + best.a,
+                xpts: best.ev, score_ev: best.score_ev, scorer_ev: best.scorer_ev, scorer_rate: scorerRate,
+                top_5: top5, tie_breakers: berekenTieBreakers(lamH, lamA), is_motd: isMotd,
+                scorer_ev_thuis: isMotd ? scorerEvH : 0.0, scorer_ev_uit: isMotd ? scorerEvA : 0.0,
+                scorer_thuis_bool: isMotd ? best.scorers[0] : false, scorer_uit_bool: isMotd ? best.scorers[1] : false
+            };
+            result.scorer_tip_onafhankelijk = isMotd ? ((best.scorers[0] !== (best.h > 0)) || (best.scorers[1] !== (best.a > 0))) : false;
+            return result;
+        }
+        if (typeof module !== 'undefined' && module.exports) {
+            module.exports = { predictMatch, calcMatrix, normPower, normaliseer1X2, berekenTieBreakers, optimize, get1X2 };
+        }
+'''
+    replacements = {
+        "__WEIGHT_MATCH_OU__": repr(float(WEIGHT_MATCH_OU)),
+        "__WEIGHT_TEAM_OU__": repr(float(WEIGHT_TEAM_OU)),
+        "__WEIGHT_EXTRA_MARKETS__": repr(float(WEIGHT_EXTRA_MARKETS)),
+        "__SCORER_HIT_RATE__": repr(float(SCORER_HIT_RATE)),
+        "__FIRST_YELLOW_BASE_MIN__": repr(float(FIRST_YELLOW_BASE_MIN)),
+        "__FIRST_YELLOW_REF_LAMBDA__": repr(float(FIRST_YELLOW_REF_LAMBDA)),
+        "__RED_CARD_RATE__": repr(float(RED_CARD_RATE)),
+        "__RED_CARD_THRESHOLD__": repr(float(RED_CARD_THRESHOLD)),
+        "__RHO_REG__": repr(float(RHO_REG)),
+    }
+    for token, value in replacements.items():
+        js = js.replace(token, value)
+    return js
+
+
+def exporteer_naar_html(alle_res, bestandsnaam, scorer_rate=None):
     """
     Genereert een prachtige, mobielvriendelijke HTML-pagina (index.html) met de voorspellingen.
     
     Parameters:
     alle_res (list): Een lijst met paren van (wedstrijd_data, voorspelling_resultaat).
     bestandsnaam (str): Het pad naar het te genereren HTML-bestand.
+    scorer_rate (float, optioneel): De scoringskans van de spits. Standaard SCORER_HIT_RATE.
     """
+    if scorer_rate is None:
+        scorer_rate = SCORER_HIT_RATE
+        
     nu_nl = datetime.datetime.now(ZoneInfo("Europe/Amsterdam"))
     nu_str = nu_nl.strftime("%d-%m-%Y %H:%M")
+
     
     html_content = f"""<!DOCTYPE html>
 <html lang="nl">
@@ -2051,6 +2714,18 @@ def exporteer_naar_html(alle_res, bestandsnaam):
                     </label>
                 </div>
                 
+                <div class="toggle-group" id="scorer-rate-wrapper" style="display: none; border-top: 1px solid var(--border-color); padding-top: 15px; margin-top: 15px;">
+                    <div class="toggle-label-container">
+                        <span class="toggle-title">Scorer Hit-Rate</span>
+                        <span class="toggle-desc">Verwachte kans dat de spits scoort als het team scoort.</span>
+                    </div>
+                    <div class="input-wrapper" style="width: 80px;">
+                        <input type="number" id="input-scorer-rate" value="{scorer_rate:.2f}" min="0.0" max="1.0" step="0.05" style="text-align: right; padding-right: 10px;">
+                    </div>
+                </div>
+
+
+                
                 <div class="calc-section">
                     <div class="ou-toggle-btn" onclick="toggleOuSection()" id="ou-btn">
                         <span>🛡️ Geavanceerde Team Over/Under Odds (Optioneel)</span>
@@ -2123,7 +2798,76 @@ def exporteer_naar_html(alle_res, bestandsnaam):
                         </div>
                     </div>
                 </div>
-                
+
+                <div class="calc-section">
+                    <div class="ou-toggle-btn" onclick="toggleExtraSection()" id="extra-btn">
+                        <span>⚽ Wedstrijd O/U &amp; Extra Markten (Optioneel)</span>
+                        <span class="caret">▼</span>
+                    </div>
+
+                    <div class="ou-container" id="extra-fields-container" style="grid-template-columns: 1fr 1fr;">
+                        <!-- Wedstrijd Over/Under -->
+                        <div class="ou-team-column">
+                            <div class="ou-team-title">🥅 Wedstrijd Totaal</div>
+                            <div class="form-group">
+                                <label for="ou-match-line">Doelpuntenlijn</label>
+                                <div class="input-wrapper">
+                                    <select id="ou-match-line">
+                                        <option value="1.5">1.5</option>
+                                        <option value="2.5" selected>2.5</option>
+                                        <option value="3.5">3.5</option>
+                                        <option value="4.5">4.5</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row" style="grid-template-columns: 1fr 1fr;">
+                                <div class="form-group">
+                                    <label for="ou-match-under">Kans Under</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="ou-match-under" placeholder="Optioneel" min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ou-match-over">Kans Over</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="ou-match-over" placeholder="Optioneel" min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Extra markten -->
+                        <div class="ou-team-column">
+                            <div class="ou-team-title">🎯 Extra Markten</div>
+                            <div class="form-group">
+                                <label for="input-btts">Beide teams scoren (Ja)</label>
+                                <div class="input-wrapper has-suffix">
+                                    <input type="number" id="input-btts" placeholder="Optioneel" min="0" max="100" step="1">
+                                    <span class="input-suffix">%</span>
+                                </div>
+                            </div>
+                            <div class="form-row" style="grid-template-columns: 1fr 1fr;">
+                                <div class="form-group">
+                                    <label for="input-cs-home">Clean sheet thuis</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="input-cs-home" placeholder="Opt." min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="input-cs-away">Clean sheet uit</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="input-cs-away" placeholder="Opt." min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <button class="calc-btn" onclick="calculatePrediction()">
                     <span class="spinner" id="calc-spinner"></span>
                     <span id="calc-btn-text">Bereken Optimale Voorspelling</span>
@@ -2148,7 +2892,11 @@ def exporteer_naar_html(alle_res, bestandsnaam):
                     <div id="calc-top-5-container" style="margin-top: 8px;">
                         <!-- Hier komt de top 5 tabel dynamically -->
                     </div>
-                    
+
+                    <div class="scorer-tips" id="calc-tiebreakers" style="margin-top: 8px;">
+                        <!-- Hier komen de tie-breakers dynamically -->
+                    </div>
+
                     <div class="scorer-tips" id="result-scorer-tips" style="display: none;">
                         <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
                         <div class="scorer-row">
@@ -2159,7 +2907,13 @@ def exporteer_naar_html(alle_res, bestandsnaam):
                             <span class="scorer-team">Uitploeg:</span>
                             <span class="scorer-name" id="result-scorer-away">Geen score</span>
                         </div>
+                        <div class="scorer-factor-info" id="result-scorer-split-ev" style="margin-top: 8px; font-size: 0.75rem; color: var(--text-secondary); border-top: 1px solid var(--border-color); padding-top: 6px; display: flex; justify-content: space-between; width: 100%;">
+                            <span>Score EV: <strong id="result-score-ev-val">0.00 pts</strong></span>
+                            <span>Scorer EV: <strong id="result-scorer-ev-val">0.00 pts</strong></span>
+                            <span>Factor: <strong id="result-scorer-factor-val">0.35</strong></span>
+                        </div>
                     </div>
+
                 </div>
             </div>
         </div>
@@ -2293,17 +3047,40 @@ def exporteer_naar_html(alle_res, bestandsnaam):
                         <span class="scorer-team">{m['away']}:</span>
                         <span class="scorer-name">{uit_tip}</span>
                     </div>
+                    <div class="scorer-factor-info" style="margin-top: 8px; font-size: 0.75rem; color: var(--text-secondary); border-top: 1px solid var(--border-color); padding-top: 6px; display: flex; justify-content: space-between;">
+                        <span>Score EV: <strong>{res.get('score_ev', 0.0):.2f} pts</strong></span>
+                        <span>Scorer EV: <strong>{res.get('scorer_ev', 0.0):.2f} pts</strong></span>
+                        <span>Factor: <strong>{res.get('scorer_rate', SCORER_HIT_RATE):.2f}</strong></span>
+                    </div>
                 </div>
             """
-            
+
+        # Modelgebaseerde tie-breaker-voorspellingen (Prompt 13)
+        tb = res.get("tie_breakers") or bereken_tie_breakers(lam_h, lam_a)
+        rode_minuut = tb.get("rode_kaart_minuut")
+        rode_str = f"{rode_minuut}e min" if rode_minuut is not None else "Geen (&gt; 90e)"
+        html_content += f"""
+                <details class="top-predictions-details" style="grid-column: span 2; margin-top: 4px;">
+                    <summary class="detail-label" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem; user-select: none;">
+                        <span>⏱️ Toernooi Tie-breakers (modelgebaseerd)</span>
+                        <span class="toggle-icon">▼</span>
+                    </summary>
+                    <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem;">
+                        <div class="scorer-row"><span class="scorer-team">1e doelpunt:</span><span class="scorer-name">{tb['eerste_doelpunt_minuut']}e min</span></div>
+                        <div class="scorer-row"><span class="scorer-team">1e gele kaart:</span><span class="scorer-name">{tb['gele_kaart_minuut']}e min</span></div>
+                        <div class="scorer-row"><span class="scorer-team">1e rode kaart:</span><span class="scorer-name">{rode_str}</span></div>
+                    </div>
+                </details>
+        """
+
         html_content += """
             </div>
         </div>
         """
-        
+
     html_content += """
     </div>
-    
+
     <script>
         // --- CALCULATOR INTERFACE BINDINGS ---
         function toggleCalculator() {
@@ -2322,13 +3099,27 @@ def exporteer_naar_html(alle_res, bestandsnaam):
             }
         }
 
+        function toggleExtraSection() {
+            const btn = document.getElementById('extra-btn');
+            const container = document.getElementById('extra-fields-container');
+            container.classList.toggle('expanded');
+            if (container.classList.contains('expanded')) {
+                btn.classList.add('expanded');
+            } else {
+                btn.classList.remove('expanded');
+            }
+        }
+
         function toggleMotdStyle() {
             const calc = document.getElementById('prediction-calculator');
             const isMotd = document.getElementById('input-is-motd').checked;
+            const scorerWrapper = document.getElementById('scorer-rate-wrapper');
             if (isMotd) {
                 calc.classList.add('is-motd-active');
+                if (scorerWrapper) scorerWrapper.style.display = 'flex';
             } else {
                 calc.classList.remove('is-motd-active');
+                if (scorerWrapper) scorerWrapper.style.display = 'none';
             }
         }
 
@@ -2337,7 +3128,6 @@ def exporteer_naar_html(alle_res, bestandsnaam):
             const drawVal = parseFloat(document.getElementById('input-win-draw').value) || 0;
             const awayVal = parseFloat(document.getElementById('input-win-away').value) || 0;
             const err = document.getElementById('calc-error-1x2');
-            
             if (homeVal + drawVal + awayVal === 0) {
                 err.style.display = 'block';
                 return false;
@@ -2346,523 +3136,118 @@ def exporteer_naar_html(alle_res, bestandsnaam):
                 return true;
             }
         }
+"""
 
-        // --- MATH FUNCTIONS ---
-        function factorial(n) {
-            let res = 1;
-            for (let i = 2; i <= n; i++) res *= i;
-            return res;
+    # Gedeelde rekenkern: single source of truth, identiek aan de Python-functie voorspel().
+    html_content += _calculator_core_js()
+
+    html_content += """
+        // --- UI GLUE: lees inputs, normaliseer markten (power) en render predictMatch() ---
+        // Spiegelt de Polymarket-parsing: under/over en ja/nee worden met de power-methode
+        // genormaliseerd voordat ze als kansen aan predictMatch worden doorgegeven.
+        function readNormalizedOu(underId, overId, lineId) {
+            let uRaw = document.getElementById(underId).value;
+            let oRaw = document.getElementById(overId).value;
+            if (uRaw === '' || oRaw === '') return null;
+            let u = parseFloat(uRaw) || 0, o = parseFloat(oRaw) || 0;
+            if (u + o <= 0) return null;
+            let line = parseFloat(document.getElementById(lineId).value);
+            let norm = normPower([u / 100.0, o / 100.0], 1.0);
+            let d = {}; d[line] = [norm[0], norm[1]]; return d;
         }
-
-        function poisson(lam, k) {
-            return Math.exp(-lam) * Math.pow(lam, k) / factorial(k);
-        }
-
-        function dixonColesTau(h, a, lam_h, lam_a, rho) {
-            if (h === 0 && a === 0) {
-                return 1.0 - lam_h * lam_a * rho;
-            } else if (h === 1 && a === 0) {
-                return 1.0 + lam_a * rho;
-            } else if (h === 0 && a === 1) {
-                return 1.0 + lam_h * rho;
-            } else if (h === 1 && a === 1) {
-                return 1.0 - rho;
-            } else {
-                return 1.0;
-            }
-        }
-
-        function calcMatrix(lam_h, lam_a, rho = 0.0) {
-            let matrix = [];
-            let totaal = 0.0;
-            for (let h = 0; h < 10; h++) {
-                matrix[h] = [];
-                for (let a = 0; a < 10; a++) {
-                    let prob = poisson(lam_h, h) * poisson(lam_a, a) * dixonColesTau(h, a, lam_h, lam_a, rho);
-                    prob = Math.max(0.0, prob);
-                    matrix[h][a] = prob;
-                    totaal += prob;
-                }
-            }
-            if (totaal > 0.0) {
-                for (let h = 0; h < 10; h++) {
-                    for (let a = 0; a < 10; a++) {
-                        matrix[h][a] /= totaal;
-                    }
-                }
-            }
-            return matrix;
-        }
-
-        // --- REPLICATED DIXON-COLES OBJECTIVE FUNCTION ---
-        function objective(params, target_h, target_d, target_a, target_ou_home, target_ou_away) {
-            let lam_h = Math.max(0.05, Math.min(params[0], 5.0));
-            let lam_a = Math.max(0.05, Math.min(params[1], 5.0));
-            let rho = Math.max(-0.25, Math.min(params[2], 0.10));
-            
-            let matrix = calcMatrix(lam_h, lam_a, rho);
-            let [h, d, a] = get1X2(matrix);
-            let error = Math.pow(h - target_h, 2) + Math.pow(d - target_d, 2) + Math.pow(a - target_a, 2);
-            
-            if (target_ou_home) {
-                let line = target_ou_home.line;
-                let t_u = target_ou_home.under;
-                let t_o = target_ou_home.over;
-                
-                let u = 0.0;
-                let o = 0.0;
-                for (let sc_h = 0; sc_h < 10; sc_h++) {
-                    for (let sc_a = 0; sc_a < 10; sc_a++) {
-                        if (sc_h < line) u += matrix[sc_h][sc_a];
-                        if (sc_h > line) o += matrix[sc_h][sc_a];
-                    }
-                }
-                error += (Math.pow(u - t_u, 2) + Math.pow(o - t_o, 2)) * 0.8;
-            }
-            
-            if (target_ou_away) {
-                let line = target_ou_away.line;
-                let t_u = target_ou_away.under;
-                let t_o = target_ou_away.over;
-                
-                let u = 0.0;
-                let o = 0.0;
-                for (let sc_h = 0; sc_h < 10; sc_h++) {
-                    for (let sc_a = 0; sc_a < 10; sc_a++) {
-                        if (sc_a < line) u += matrix[sc_h][sc_a];
-                        if (sc_a > line) o += matrix[sc_h][sc_a];
-                    }
-                }
-                error += (Math.pow(u - t_u, 2) + Math.pow(o - t_o, 2)) * 0.8;
-            }
-            
-            return error;
-        }
-
-        function get1X2(matrix) {
-            let h_win = 0.0;
-            let draw = 0.0;
-            let a_win = 0.0;
-            for (let h = 0; h < 10; h++) {
-                for (let a = 0; a < 10; a++) {
-                    let p = matrix[h][a];
-                    if (h > a) h_win += p;
-                    else if (h === a) draw += p;
-                    else a_win += p;
-                }
-            }
-            return [h_win, draw, a_win];
-        }
-
-        // --- NELDER-MEAD OPTIMIZATION ---
-        function nelderMead(target_h, target_d, target_a, target_ou_home, target_ou_away) {
-            let start = [1.3, 1.0, -0.05];
-            
-            let simplex = [
-                [start[0], start[1], start[2]],
-                [start[0] + 0.05 * start[0], start[1], start[2]],
-                [start[0], start[1] + 0.05 * start[1], start[2]],
-                [start[0], start[1], start[2] + 0.05 * start[2]]
-            ];
-            
-            let evalFunc = (p) => objective(p, target_h, target_d, target_a, target_ou_home, target_ou_away);
-            let values = simplex.map(p => evalFunc(p));
-            
-            const maxIterations = 1000;
-            const tolerance = 1e-15;
-            
-            const alpha = 1.0;
-            const gamma = 2.0;
-            const beta = 0.5;
-            const sigma = 0.5;
-            
-            const clip = (p) => {
-                return [
-                    Math.max(0.05, Math.min(p[0], 5.0)),
-                    Math.max(0.05, Math.min(p[1], 5.0)),
-                    Math.max(-0.25, Math.min(p[2], 0.10))
-                ];
-            };
-            
-            for (let i = 0; i < 4; i++) {
-                simplex[i] = clip(simplex[i]);
-                values[i] = evalFunc(simplex[i]);
-            }
-            
-            for (let iter = 0; iter < maxIterations; iter++) {
-                let indices = [0, 1, 2, 3];
-                indices.sort((x, y) => values[x] - values[y]);
-                
-                simplex = indices.map(idx => simplex[idx]);
-                values = indices.map(idx => values[idx]);
-                
-                if (values[3] - values[0] < tolerance) {
-                    break;
-                }
-                
-                let centroid = [0, 0, 0];
-                for (let j = 0; j < 3; j++) {
-                    centroid[0] += simplex[j][0];
-                    centroid[1] += simplex[j][1];
-                    centroid[2] += simplex[j][2];
-                }
-                centroid[0] /= 3;
-                centroid[1] /= 3;
-                centroid[2] /= 3;
-                
-                let reflected = [
-                    centroid[0] + alpha * (centroid[0] - simplex[3][0]),
-                    centroid[1] + alpha * (centroid[1] - simplex[3][1]),
-                    centroid[2] + alpha * (centroid[2] - simplex[3][2])
-                ];
-                reflected = clip(reflected);
-                let fReflected = evalFunc(reflected);
-                
-                if (fReflected < values[1] && fReflected >= values[0]) {
-                    simplex[3] = reflected;
-                    values[3] = fReflected;
-                    continue;
-                }
-                
-                if (fReflected < values[0]) {
-                    let expanded = [
-                        centroid[0] + gamma * (reflected[0] - centroid[0]),
-                        centroid[1] + gamma * (reflected[1] - centroid[1]),
-                        centroid[2] + gamma * (reflected[2] - centroid[2])
-                    ];
-                    expanded = clip(expanded);
-                    let fExpanded = evalFunc(expanded);
-                    
-                    if (fExpanded < fReflected) {
-                        simplex[3] = expanded;
-                        values[3] = fExpanded;
-                    } else {
-                        simplex[3] = reflected;
-                        values[3] = fReflected;
-                    }
-                    continue;
-                }
-                
-                if (fReflected >= values[1]) {
-                    let contracted;
-                    if (fReflected < values[3]) {
-                        contracted = [
-                            centroid[0] + beta * (reflected[0] - centroid[0]),
-                            centroid[1] + beta * (reflected[1] - centroid[1]),
-                            centroid[2] + beta * (reflected[2] - centroid[2])
-                        ];
-                        contracted = clip(contracted);
-                        let fContracted = evalFunc(contracted);
-                        if (fContracted <= fReflected) {
-                            simplex[3] = contracted;
-                            values[3] = fContracted;
-                            continue;
-                        }
-                    } else {
-                        contracted = [
-                            centroid[0] + beta * (simplex[3][0] - centroid[0]),
-                            centroid[1] + beta * (simplex[3][1] - centroid[1]),
-                            centroid[2] + beta * (simplex[3][2] - centroid[2])
-                        ];
-                        contracted = clip(contracted);
-                        let fContracted = evalFunc(contracted);
-                        if (fContracted < values[3]) {
-                            simplex[3] = contracted;
-                            values[3] = fContracted;
-                            continue;
-                        }
-                    }
-                }
-                
-                for (let i = 1; i < 4; i++) {
-                    simplex[i] = [
-                        simplex[0][0] + sigma * (simplex[i][0] - simplex[0][0]),
-                        simplex[0][1] + sigma * (simplex[i][1] - simplex[0][1]),
-                        simplex[0][2] + sigma * (simplex[i][2] - simplex[0][2])
-                    ];
-                    simplex[i] = clip(simplex[i]);
-                    values[i] = evalFunc(simplex[i]);
-                }
-            }
-            
-            let indices = [0, 1, 2, 3];
-            indices.sort((x, y) => values[x] - values[y]);
-            return clip(simplex[indices[0]]);
-        }
-
-        // --- EXPECTED VALUE & PREDICTION CALCULATIONS ---
-        function calcEvRegular(pred_h, pred_a, matrix) {
-            let ev = 0.0;
-            for (let act_h = 0; act_h < 10; act_h++) {
-                for (let act_a = 0; act_a < 10; act_a++) {
-                    let prob = matrix[act_h][act_a];
-                    let pts = 0;
-                    if (pred_h === act_h && pred_a === act_a) {
-                        pts += 10;
-                    } else {
-                        let pred_toto = pred_h > pred_a ? 1 : (pred_h < pred_a ? -1 : 0);
-                        let act_toto = act_h > act_a ? 1 : (act_h < act_a ? -1 : 0);
-                        if (pred_toto === act_toto) {
-                            if (pred_toto === 0) {
-                                pts += 7;
-                            } else {
-                                pts += 5;
-                            }
-                        }
-                        if (pred_h === act_h) pts += 2;
-                        if (pred_a === act_a) pts += 2;
-                    }
-                    ev += prob * pts;
-                }
-            }
-            return ev;
-        }
-
-        function calcEvMotd(pred_h, pred_a, matrix) {
-            let pred_scorer_h = (pred_h > 0);
-            let pred_scorer_a = (pred_a > 0);
-            let ev = 0.0;
-            
-            for (let act_h = 0; act_h < 10; act_h++) {
-                for (let act_a = 0; act_a < 10; act_a++) {
-                    let prob = matrix[act_h][act_a];
-                    let pts = 0;
-                    
-                    if (pred_h === act_h && pred_a === act_a) {
-                        pts += 12;
-                    } else {
-                        let pred_toto = pred_h > pred_a ? 1 : (pred_h < pred_a ? -1 : 0);
-                        let act_toto = act_h > act_a ? 1 : (act_h < act_a ? -1 : 0);
-                        if (pred_toto === act_toto) {
-                            if (pred_toto === 0) {
-                                pts += 8;
-                            } else {
-                                pts += 6;
-                            }
-                        }
-                        if (pred_h === act_h) pts += 2;
-                        if (pred_a === act_a) pts += 2;
-                    }
-                    
-                    if (!pred_scorer_h) {
-                        if (act_h === 0) pts += 4;
-                    } else {
-                        if (act_h > 0) pts += 4 * 0.35;
-                    }
-                    
-                    if (!pred_scorer_a) {
-                        if (act_a === 0) pts += 4;
-                    } else {
-                        if (act_a > 0) pts += 4 * 0.35;
-                    }
-                    
-                    ev += prob * pts;
-                }
-            }
-            return [ev, [pred_scorer_h, pred_scorer_a]];
-        }
-
-        function calculateActualPointsJS(pred_h, pred_a, act_h, act_a, isMotd) {
-            let pts = 0;
-            if (pred_h === act_h && pred_a === act_a) {
-                pts += isMotd ? 12 : 10;
-            } else {
-                let pred_toto = pred_h > pred_a ? 1 : (pred_h < pred_a ? -1 : 0);
-                let act_toto = act_h > act_a ? 1 : (act_h < act_a ? -1 : 0);
-                if (pred_toto === act_toto) {
-                    if (pred_toto === 0) {
-                        pts += isMotd ? 8 : 7;
-                    } else {
-                        pts += isMotd ? 6 : 5;
-                    }
-                }
-                if (pred_h === act_h) pts += 2;
-                if (pred_a === act_a) pts += 2;
-            }
-            if (isMotd) {
-                let pred_scorer_h = (pred_h > 0);
-                let pred_scorer_a = (pred_a > 0);
-                if (!pred_scorer_h) {
-                    if (act_h === 0) pts += 4;
-                } else {
-                    if (act_h > 0) pts += 4 * 0.35;
-                }
-                if (!pred_scorer_a) {
-                    if (act_a === 0) pts += 4;
-                } else {
-                    if (act_a > 0) pts += 4 * 0.35;
-                }
-            }
-            return pts;
+        function readNormalizedYes(yesId) {
+            let v = document.getElementById(yesId).value;
+            if (v === '') return null;
+            let y = parseFloat(v) || 0; if (y <= 0) return null;
+            let norm = normPower([y / 100.0, 1.0 - y / 100.0], 1.0);
+            return norm[0];
         }
 
         function calculatePrediction() {
             if (!validateSum1X2()) return;
-            
             const btnText = document.getElementById('calc-btn-text');
             const spinner = document.getElementById('calc-spinner');
             const resultsWrapper = document.getElementById('results-wrapper');
-            
             btnText.style.display = 'none';
             spinner.style.display = 'inline-block';
-            
             setTimeout(() => {
-                let homePct = parseFloat(document.getElementById('input-win-home').value) || 0;
-                let drawPct = parseFloat(document.getElementById('input-win-draw').value) || 0;
-                let awayPct = parseFloat(document.getElementById('input-win-away').value) || 0;
-                
-                let isMotd = document.getElementById('input-is-motd').checked;
-                
-                let sum = homePct + drawPct + awayPct;
-                let target_h = homePct / sum;
-                let target_d = drawPct / sum;
-                let target_a = awayPct / sum;
-                
-                let target_ou_home = null;
-                let homeUnder = document.getElementById('ou-home-under').value;
-                let homeOver = document.getElementById('ou-home-over').value;
-                if (homeUnder !== "" && homeOver !== "") {
-                    let u_v = parseFloat(homeUnder) || 0;
-                    let o_v = parseFloat(homeOver) || 0;
-                    let tot = u_v + o_v;
-                    if (tot > 0) {
-                        target_ou_home = {
-                            line: parseFloat(document.getElementById('ou-home-line').value),
-                            under: u_v / tot,
-                            over: o_v / tot
-                        };
+                try {
+                    let homePct = parseFloat(document.getElementById('input-win-home').value) || 0;
+                    let drawPct = parseFloat(document.getElementById('input-win-draw').value) || 0;
+                    let awayPct = parseFloat(document.getElementById('input-win-away').value) || 0;
+                    let isMotd = document.getElementById('input-is-motd').checked;
+                    let scorerRateInput = document.getElementById('input-scorer-rate');
+                    let scorerRate = scorerRateInput ? parseFloat(scorerRateInput.value) : SCORER_HIT_RATE;
+                    if (isNaN(scorerRate)) scorerRate = SCORER_HIT_RATE;
+
+                    let inp = {
+                        home_pct: homePct, draw_pct: drawPct, away_pct: awayPct, is_motd: isMotd,
+                        team_ou_home: readNormalizedOu('ou-home-under', 'ou-home-over', 'ou-home-line'),
+                        team_ou_away: readNormalizedOu('ou-away-under', 'ou-away-over', 'ou-away-line'),
+                        ou_probs: readNormalizedOu('ou-match-under', 'ou-match-over', 'ou-match-line'),
+                        btts_prob: readNormalizedYes('input-btts'),
+                        clean_sheet_home_prob: readNormalizedYes('input-cs-home'),
+                        clean_sheet_away_prob: readNormalizedYes('input-cs-away'),
+                        scorer_rate: scorerRate
+                    };
+
+                    let res = predictMatch(inp);
+                    let lamH = res.lambda[0], lamA = res.lambda[1], rho = res.rho;
+                    let best = res.top_5[0];
+
+                    document.getElementById('result-score').innerText = res.uitslag;
+                    document.getElementById('result-ev').innerText = res.xpts.toFixed(2) + ' pts';
+                    document.getElementById('result-xg').innerText = 'xG Thuis: ' + lamH.toFixed(2) + ' | xG Uit: ' + lamA.toFixed(2) + ' (\u03c1: ' + rho.toFixed(2) + ')';
+
+                    let html = '<table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>EV</th><th>Kans</th><th>P(&ge;1pt)</th><th>P(&ge;5pt)</th><th style="text-align: right;">&Delta;EV</th></tr></thead><tbody>';
+                    res.top_5.forEach((pred, index) => {
+                        let rank = index + 1;
+                        let rankClass = 'rank-' + rank;
+                        let badge = rank === 1 ? 'Hoofdadvies' : '#' + rank;
+                        let dv = pred.delta_ev;
+                        let dvStr = dv === 0 ? '0.00' : (dv > 0 ? '+' + dv.toFixed(2) : dv.toFixed(2));
+                        let dColor = dv > 0 ? 'var(--accent-green)' : (dv === 0 ? 'var(--text-secondary)' : 'var(--accent-red)');
+                        html += '<tr class="' + rankClass + '"><td><span class="badge-rank">' + badge + '</span></td>' +
+                            '<td><strong>' + pred.uitslag + '</strong></td>' +
+                            '<td>' + pred.ev.toFixed(2) + ' pts</td>' +
+                            '<td>' + pred.kans.toFixed(1) + '%</td>' +
+                            '<td>' + (pred.p_1pt * 100).toFixed(1) + '%</td>' +
+                            '<td>' + (pred.p_5pt * 100).toFixed(1) + '%</td>' +
+                            '<td style="text-align: right; font-weight: 600; color: ' + dColor + ';">' + dvStr + '</td></tr>';
+                    });
+                    html += '</tbody></table>';
+                    document.getElementById('calc-top-5-container').innerHTML = html;
+
+                    let tb = res.tie_breakers;
+                    let rodeStr = tb.rode_kaart_minuut != null ? (tb.rode_kaart_minuut + 'e min') : 'Geen (&gt; 90e)';
+                    document.getElementById('calc-tiebreakers').innerHTML =
+                        '<span class="detail-label" style="color: var(--accent-blue);">\u23f1\ufe0f Toernooi Tie-breakers (modelgebaseerd)</span>' +
+                        '<div class="scorer-row"><span class="scorer-team">1e doelpunt:</span><span class="scorer-name" style="color: var(--accent-blue);">' + tb.eerste_doelpunt_minuut + 'e min</span></div>' +
+                        '<div class="scorer-row"><span class="scorer-team">1e gele kaart:</span><span class="scorer-name" style="color: var(--accent-blue);">' + tb.gele_kaart_minuut + 'e min</span></div>' +
+                        '<div class="scorer-row"><span class="scorer-team">1e rode kaart:</span><span class="scorer-name" style="color: var(--accent-blue);">' + rodeStr + '</span></div>';
+
+                    const scorerDiv = document.getElementById('result-scorer-tips');
+                    if (isMotd) {
+                        document.getElementById('result-scorer-home').innerText = best.scorers[0] ? 'Spits (of penaltynemer)' : 'Geen score';
+                        document.getElementById('result-scorer-away').innerText = best.scorers[1] ? 'Spits (of penaltynemer)' : 'Geen score';
+                        document.getElementById('result-score-ev-val').innerText = best.score_ev.toFixed(2) + ' pts';
+                        document.getElementById('result-scorer-ev-val').innerText = best.scorer_ev.toFixed(2) + ' pts';
+                        document.getElementById('result-scorer-factor-val').innerText = scorerRate.toFixed(2);
+                        scorerDiv.style.display = 'flex';
+                    } else {
+                        scorerDiv.style.display = 'none';
                     }
+
+                    spinner.style.display = 'none';
+                    btnText.style.display = 'inline-block';
+                    resultsWrapper.style.display = 'flex';
+                    resultsWrapper.offsetHeight;
+                    resultsWrapper.classList.add('visible');
+                } catch (e) {
+                    spinner.style.display = 'none';
+                    btnText.style.display = 'inline-block';
+                    console.error('Berekening mislukt:', e);
                 }
-                
-                let target_ou_away = null;
-                let awayUnder = document.getElementById('ou-away-under').value;
-                let awayOver = document.getElementById('ou-away-over').value;
-                if (awayUnder !== "" && awayOver !== "") {
-                    let u_v = parseFloat(awayUnder) || 0;
-                    let o_v = parseFloat(awayOver) || 0;
-                    let tot = u_v + o_v;
-                    if (tot > 0) {
-                        target_ou_away = {
-                            line: parseFloat(document.getElementById('ou-away-line').value),
-                            under: u_v / tot,
-                            over: o_v / tot
-                        };
-                    }
-                }
-                
-                let [lam_h, lam_a, rho] = nelderMead(target_h, target_d, target_a, target_ou_home, target_ou_away);
-                let matrix = calcMatrix(lam_h, lam_a, rho);
-                
-                let all_predictions = [];
-                for (let h = 0; h <= 6; h++) {
-                    for (let a = 0; a <= 6; a++) {
-                        let ev;
-                        let scorers = [false, false];
-                        if (isMotd) {
-                            let res = calcEvMotd(h, a, matrix);
-                            ev = res[0];
-                            scorers = res[1];
-                        } else {
-                            ev = calcEvRegular(h, a, matrix);
-                        }
-                        
-                        let prob = matrix[h][a] || 0.0;
-                        
-                        // Bereken cumulatieve kansen P(>=1pt) en P(>=5pt)
-                        let p_1pt = 0.0;
-                        let p_5pt = 0.0;
-                        for (let act_h = 0; act_h < 10; act_h++) {
-                            for (let act_a = 0; act_a < 10; act_a++) {
-                                let act_prob = matrix[act_h][act_a] || 0.0;
-                                let pts = calculateActualPointsJS(h, a, act_h, act_a, isMotd);
-                                if (pts >= 1.0) p_1pt += act_prob;
-                                if (pts >= 5.0) p_5pt += act_prob;
-                            }
-                        }
-                        
-                        all_predictions.push({
-                            h: h,
-                            a: a,
-                            ev: ev,
-                            kans: prob * 100.0,
-                            p_1pt: p_1pt,
-                            p_5pt: p_5pt,
-                            scorers: scorers
-                        });
-                    }
-                }
-                
-                all_predictions.sort((x, y) => y.ev - x.ev);
-                let top_5 = all_predictions.slice(0, 5);
-                let best = top_5[0];
-                
-                // Bereken delta_ev ten opzichte van de 2e beste EV
-                let second_best_ev = top_5.length > 1 ? top_5[1].ev : 0.0;
-                top_5.forEach(pred => {
-                    pred.delta_ev = pred.ev - second_best_ev;
-                });
-                
-                document.getElementById('result-score').innerText = `${best.h}-${best.a}`;
-                document.getElementById('result-ev').innerText = `${best.ev.toFixed(2)} pts`;
-                document.getElementById('result-xg').innerText = `xG Thuis: ${lam_h.toFixed(2)} | xG Uit: ${lam_a.toFixed(2)} (ρ: ${rho.toFixed(2)})`;
-                
-                let top5Html = `<table class="top-predictions-table">
-                    <thead>
-                        <tr>
-                            <th>Rank</th>
-                            <th>Uitslag</th>
-                            <th>EV</th>
-                            <th>Kans</th>
-                            <th>P(&ge;1pt)</th>
-                            <th>P(&ge;5pt)</th>
-                            <th style="text-align: right;">&Delta;EV</th>
-                        </tr>
-                    </thead>
-                    <tbody>`;
-                
-                top_5.forEach((pred, index) => {
-                    let rank = index + 1;
-                    let rankClass = `rank-${rank}`;
-                    let badgeText = rank === 1 ? "Hoofdadvies" : `#${rank}`;
-                    let uitslag = `${pred.h}-${pred.a}`;
-                    let kans = `${pred.kans.toFixed(1)}%`;
-                    let ev = `${pred.ev.toFixed(2)} pts`;
-                    let p1 = `${(pred.p_1pt * 100).toFixed(1)}%`;
-                    let p5 = `${(pred.p_5pt * 100).toFixed(1)}%`;
-                    
-                    let deltaVal = pred.delta_ev;
-                    let deltaValStr = deltaVal === 0 ? "0.00" : (deltaVal > 0 ? "+" + deltaVal.toFixed(2) : deltaVal.toFixed(2));
-                    let deltaColor = deltaVal > 0 ? "var(--accent-green)" : (deltaVal === 0 ? "var(--text-secondary)" : "var(--accent-red)");
-                    
-                    top5Html += `
-                    <tr class="${rankClass}">
-                        <td><span class="badge-rank">${badgeText}</span></td>
-                        <td><strong>${uitslag}</strong></td>
-                        <td>${ev}</td>
-                        <td>${kans}</td>
-                        <td>${p1}</td>
-                        <td>${p5}</td>
-                        <td style="text-align: right; font-weight: 600; color: ${deltaColor};">${deltaValStr}</td>
-                    </tr>`;
-                });
-                top5Html += `</tbody></table>`;
-                
-                document.getElementById('calc-top-5-container').innerHTML = top5Html;
-                
-                const scorerDiv = document.getElementById('result-scorer-tips');
-                if (isMotd) {
-                    document.getElementById('result-scorer-home').innerText = best.scorers[0] ? "Spits (of penaltynemer)" : "Geen score";
-                    document.getElementById('result-scorer-away').innerText = best.scorers[1] ? "Spits (of penaltynemer)" : "Geen score";
-                    scorerDiv.style.display = 'flex';
-                } else {
-                    scorerDiv.style.display = 'none';
-                }
-                
-                spinner.style.display = 'none';
-                btnText.style.display = 'inline-block';
-                resultsWrapper.style.display = 'flex';
-                resultsWrapper.offsetHeight;
-                resultsWrapper.classList.add('visible');
             }, 400);
         }
     </script>
@@ -2880,7 +3265,7 @@ def exporteer_naar_html(alle_res, bestandsnaam):
     except Exception as e:
         print(f"{RED}❌ Fout bij genereren HTML-bestand: {e}{RESET}\n")
 
-def polymarket_modus(toon_extra=False, output_file=None, loss_type="logloss", overround_method="power", verbose=False, weight_match_ou=None, weight_team_ou=None, inclusief_top5=False, tiebreak="probability"):
+def polymarket_modus(toon_extra=False, output_file=None, loss_type="logloss", overround_method="power", verbose=False, weight_match_ou=None, weight_team_ou=None, weight_extra_markets=None, inclusief_top5=False, tiebreak="probability", scorer_rate=None):
     """
     Start de Polymarket-modus waarin de gebruiker live wedstrijden kan bekijken en voorspellen via de terminal.
     
@@ -2892,8 +3277,10 @@ def polymarket_modus(toon_extra=False, output_file=None, loss_type="logloss", ov
     verbose (bool, optioneel): Of er debug-logging getoond moet worden voor de fits. Standaard False.
     weight_match_ou (float, optioneel): Het gewicht voor de wedstrijd Over/Under fit-termen.
     weight_team_ou (float, optioneel): Het gewicht voor de team Over/Under fit-termen.
+    weight_extra_markets (float, optioneel): Het gewicht voor de extra markten fit-termen.
     inclusief_top5 (bool, optioneel): Of top-5 risico-analyse getoond/geëxporteerd moet worden.
     tiebreak (str, optioneel): De te gebruiken tie-breaker strategie. Standaard 'probability'.
+    scorer_rate (float, optioneel): De scoringskans van de spits. Standaard SCORER_HIT_RATE.
     """
     print_header()
     print(f"{CYAN}{BOLD}Bezig met ophalen van actieve WK-wedstrijden en odds van Polymarket...{RESET}")
@@ -2903,123 +3290,145 @@ def polymarket_modus(toon_extra=False, output_file=None, loss_type="logloss", ov
         return
         
     if not matches:
-        print(f"{YELLOW}Geen actieve WK-wedstrijden gevonden op Polymarket op dit moment.{RESET}")
+        print(f"{YELLOW}Geen actieve WK-wedstrijden gevonden op Polymarket.{RESET}")
         return
         
-    print(f"\n{GREEN}✓ {len(matches)} actieve WK-wedstrijden succesvol opgehaald!{RESET}\n")
-    
     while True:
-        print(f"{BOLD}Beschikbare wedstrijden (chronologisch):{RESET}")
-        for idx, m in enumerate(matches):
-            datum_str = converteer_utc_naar_nl(m['date'])
-            motd_label = " [MOTD]" if m['is_motd'] else ""
-            print(f"  {idx+1:2d}. [{datum_str}] {m['home']} vs. {m['away']}{motd_label} (Odds: {m['home_prob']:.1f}% / {m['draw_prob']:.1f}% / {m['away_prob']:.1f}%)")
-        print(f"  {len(matches)+1:2d}. [Voorspel ALLE wedstrijden]")
+        print(f"{BOLD}GEVONDEN WEDSTRIJDEN:{RESET}")
+        print("-" * 65)
+        for idx, m in enumerate(matches, start=1):
+            motd_lbl = f" {YELLOW}[MOTD]{RESET}" if m['is_motd'] else ""
+            print(f"{idx:2d}. {m['home']:<20} vs. {m['away']:<20} ({converteer_utc_naar_nl(m['date'])}CET){motd_lbl}")
+        print("-" * 65)
+        print(f"{len(matches) + 1:2d}. {BOLD}Voorspel ALLE wedstrijden en toon samenvatting{RESET}")
+        print(f"{len(matches) + 2:2d}. Stoppen en terug naar hoofdmenu")
+        print("-" * 65)
         
-        keuze = input(f"\n{BOLD}Kies een nummer (1 t/m {len(matches)+1}) of typ 'exit': {RESET}").strip().lower()
-        if keuze in ['exit', 'quit', 'q']:
-            print(f"\n{YELLOW}Tot ziens! 👋{RESET}\n")
-            return
-            
         try:
-            val = int(keuze)
-            if 1 <= val <= len(matches):
-                # Voorspel één wedstrijd
-                m = matches[val-1]
-                print(f"\nJe koos: {BOLD}{m['home']} vs. {m['away']}{RESET}")
-                
-                suggestie = "ja" if m['is_motd'] else "nee"
-                while True:
-                    motd_in = input(f"{BOLD}Is dit de Wedstrijd van de Dag (MOTD)? (ja/nee) [standaard: {suggestie}]: {RESET}").strip().lower()
-                    if not motd_in:
-                        is_motd = m['is_motd']
-                        break
-                    elif motd_in in ['ja', 'j', 'yes', 'y']:
-                        is_motd = True
-                        break
-                    elif motd_in in ['nee', 'n', 'no']:
-                        is_motd = False
-                        break
-                    else:
-                        print(f"{RED}Vul alstublieft 'ja' of 'nee' in.{RESET}")
-                
+            invoer = input(f"{BOLD}Kies een wedstrijd (1-{len(matches) + 2}): {RESET}").strip()
+            if not invoer:
+                continue
+            val = int(invoer)
+        except ValueError:
+            print(f"{RED}Ongeldige keuze. Voer een getal in.{RESET}\n")
+            continue
+            
+        if val == len(matches) + 2:
+            break
+            
+        if 1 <= val <= len(matches):
+            m = matches[val - 1]
+            print(f"\n{BOLD}VERWERKT WEDSTRIJD: {m['home']} vs. {m['away']}{RESET}")
+            print(f"  • Odds (1/X/2): {m['home_prob']:.1f}% / {m['draw_prob']:.1f}% / {m['away_prob']:.1f}%")
+            if m.get('btts_prob') is not None:
+                print(f"  • BTTS (Ja): {m['btts_prob']*100:.1f}%")
+            if m.get('clean_sheet_home_prob') is not None:
+                print(f"  • Clean Sheet {m['home']}: {m['clean_sheet_home_prob']*100:.1f}%")
+            if m.get('clean_sheet_away_prob') is not None:
+                print(f"  • Clean Sheet {m['away']}: {m['clean_sheet_away_prob']*100:.1f}%")
+            
+            # Vraag of dit MOTD is
+            suggestie = "ja" if m['is_motd'] else "nee"
+            while True:
+                motd_in = input(f"{BOLD}Is dit de Wedstrijd van de Dag (MOTD)? (ja/nee) [standaard: {suggestie}]: {RESET}").strip().lower()
+                if not motd_in:
+                    is_motd = m['is_motd']
+                    break
+                elif motd_in in ['ja', 'j', 'yes', 'y']:
+                    is_motd = True
+                    break
+                elif motd_in in ['nee', 'n', 'no']:
+                    is_motd = False
+                    break
+                else:
+                    print(f"{RED}Vul alstublieft 'ja' of 'nee' in.{RESET}")
+            
+            res = voorspel(
+                m['home_prob'], m['draw_prob'], m['away_prob'],
+                is_motd,
+                ou_probs=m.get('ou_probs'),
+                team_ou_home=m.get('team_ou_home'),
+                team_ou_away=m.get('team_ou_away'),
+                btts_prob=m.get('btts_prob'),
+                clean_sheet_home_prob=m.get('clean_sheet_home_prob'),
+                clean_sheet_away_prob=m.get('clean_sheet_away_prob'),
+                loss_type=loss_type,
+                overround_method=overround_method,
+                verbose=verbose,
+                weight_match_ou=weight_match_ou,
+                weight_team_ou=weight_team_ou,
+                weight_extra_markets=weight_extra_markets,
+                tiebreak=tiebreak,
+                scorer_rate=scorer_rate
+            )
+            print_resultaat(res, is_motd, toon_extra=toon_extra)
+            break
+            
+        elif val == len(matches) + 1:
+            # Voorspel ALLE wedstrijden
+            print(f"\n{BOLD}Berekent voorspellingen voor alle {len(matches)} wedstrijden...{RESET}\n")
+            
+            alle_res = []
+            for m in matches:
                 res = voorspel(
                     m['home_prob'], m['draw_prob'], m['away_prob'],
-                    is_motd,
-                    ou_probs=m.get('ou_probs'),
+                    is_motd=m['is_motd'],
+                    ou_probs=m['ou_probs'],
                     team_ou_home=m.get('team_ou_home'),
                     team_ou_away=m.get('team_ou_away'),
+                    btts_prob=m.get('btts_prob'),
+                    clean_sheet_home_prob=m.get('clean_sheet_home_prob'),
+                    clean_sheet_away_prob=m.get('clean_sheet_away_prob'),
                     loss_type=loss_type,
                     overround_method=overround_method,
                     verbose=verbose,
                     weight_match_ou=weight_match_ou,
                     weight_team_ou=weight_team_ou,
-                    tiebreak=tiebreak
+                    weight_extra_markets=weight_extra_markets,
+                    tiebreak=tiebreak,
+                    scorer_rate=scorer_rate
                 )
-                print_resultaat(res, is_motd, toon_extra=toon_extra)
-                break
+                alle_res.append((m, res))
+            
+
+            # Toon tabel
+            print(f"{CYAN}{BOLD}================================================================================================================================================================={RESET}")
+            print(f"                                                               OVERZICHT ALLE VOORSPELDE WEDSTRIJDEN")
+            print(f"{CYAN}{BOLD}================================================================================================================================================================={RESET}")
+            print(f"{BOLD}{'Datum/Tijd':<17} | {'Thuisploeg':<20} vs. {'Uitploeg':<20} | {'Odds (1/X/2)':<18} | {'xG (Thuis-Uit)':<15} | {'rho':<6} | {'EV (pts)':<8} | {'Uitslag':<12} | {'Doelpuntenmaker Tips (MOTD)':<30}{RESET}")
+            print("-" * 154)
+            for m, res in alle_res:
+                kansen_str = f"{m['home_prob']:.0f}% / {m['draw_prob']:.0f}% / {m['away_prob']:.0f}%"
+                lam_h, lam_a = res["lambda"]
+                rho = res.get("rho", 0.0)
+                ev_val = res.get("xpts", 0.0)
+                xg_str = f"{lam_h:.2f} - {lam_a:.2f}"
+                datum_str = converteer_utc_naar_nl(m['date'])
                 
-            elif val == len(matches) + 1:
-                # Voorspel ALLE wedstrijden
-                print(f"\n{BOLD}Berekent voorspellingen voor alle {len(matches)} wedstrijden...{RESET}\n")
+                advies_str = res["uitslag"]
+                if m["is_motd"]:
+                    advies_str += " [MOTD]"
                 
-                alle_res = []
-                for m in matches:
-                    res = voorspel(
-                        m['home_prob'], m['draw_prob'], m['away_prob'],
-                        is_motd=m['is_motd'],
-                        ou_probs=m['ou_probs'],
-                        team_ou_home=m.get('team_ou_home'),
-                        team_ou_away=m.get('team_ou_away'),
-                        loss_type=loss_type,
-                        overround_method=overround_method,
-                        verbose=verbose,
-                        weight_match_ou=weight_match_ou,
-                        weight_team_ou=weight_team_ou,
-                        tiebreak=tiebreak
-                    )
-                    alle_res.append((m, res))
+                scorer_str = ""
+                if m["is_motd"]:
+                    thuis_tip = "Spits" if "spits" in res["scorer_thuis"].lower() else "Geen"
+                    uit_tip = "Spits" if "spits" in res["scorer_uit"].lower() else "Geen"
+                    scorer_str = f"Thuis: {thuis_tip} | Uit: {uit_tip}"
                     
-                # Toon tabel
-                print(f"{CYAN}{BOLD}================================================================================================================================================================={RESET}")
-                print(f"                                                               OVERZICHT ALLE VOORSPELDE WEDSTRIJDEN")
-                print(f"{CYAN}{BOLD}================================================================================================================================================================={RESET}")
-                print(f"{BOLD}{'Datum/Tijd':<17} | {'Thuisploeg':<20} vs. {'Uitploeg':<20} | {'Odds (1/X/2)':<18} | {'xG (Thuis-Uit)':<15} | {'rho':<6} | {'EV (pts)':<8} | {'Uitslag':<12} | {'Doelpuntenmaker Tips (MOTD)':<30}{RESET}")
-                print("-" * 154)
-                for m, res in alle_res:
-                    kansen_str = f"{m['home_prob']:.0f}% / {m['draw_prob']:.0f}% / {m['away_prob']:.0f}%"
-                    lam_h, lam_a = res["lambda"]
-                    rho = res.get("rho", 0.0)
-                    ev_val = res.get("xpts", 0.0)
-                    xg_str = f"{lam_h:.2f} - {lam_a:.2f}"
-                    datum_str = converteer_utc_naar_nl(m['date'])
-                    
-                    advies_str = res["uitslag"]
-                    if m["is_motd"]:
-                        advies_str += " [MOTD]"
-                    
-                    scorer_str = ""
-                    if m["is_motd"]:
-                        thuis_tip = "Spits" if "spits" in res["scorer_thuis"].lower() else "Geen"
-                        uit_tip = "Spits" if "spits" in res["scorer_uit"].lower() else "Geen"
-                        scorer_str = f"Thuis: {thuis_tip} | Uit: {uit_tip}"
-                        
-                    print(f"{datum_str:<17} | {m['home']:<20} vs. {m['away']:<20} | {kansen_str:<18} | {xg_str:<15} | {rho:<6.2f} | {ev_val:<8.2f} | {GREEN}{BOLD}{advies_str:<12}{RESET} | {YELLOW}{scorer_str:<30}{RESET}")
-                print(f"{CYAN}{BOLD}================================================================================================================================================================={RESET}\n")
-                
-                # Exporteren
-                if not output_file:
-                    opslaan = input(f"{BOLD}Wil je deze voorspellingen opslaan in een tekstbestand? (ja/nee) [standaard: ja]: {RESET}").strip().lower()
-                    if opslaan not in ['nee', 'n', 'no']:
-                        output_file = "voorspellingen.txt"
-                
-                if output_file:
-                    exporteer_naar_bestand(alle_res, output_file, inclusief_top5=inclusief_top5)
-                break
-            else:
-                print(f"{RED}Ongeldig nummer. Kies een getal tussen 1 en {len(matches)+1}.{RESET}\n")
-        except ValueError:
-            print(f"{RED}Vul een geldig nummer in.{RESET}\n")
+                print(f"{datum_str:<17} | {m['home']:<20} vs. {m['away']:<20} | {kansen_str:<18} | {xg_str:<15} | {rho:<6.2f} | {ev_val:<8.2f} | {GREEN}{BOLD}{advies_str:<12}{RESET} | {YELLOW}{scorer_str:<30}{RESET}")
+            print(f"{CYAN}{BOLD}================================================================================================================================================================={RESET}\n")
+            
+            # Exporteren
+            if not output_file:
+                opslaan = input(f"{BOLD}Wil je deze voorspellingen opslaan in een tekstbestand? (ja/nee) [standaard: ja]: {RESET}").strip().lower()
+                if opslaan not in ['nee', 'n', 'no']:
+                    output_file = "voorspellingen.txt"
+            
+            if output_file:
+                exporteer_naar_bestand(alle_res, output_file, inclusief_top5=inclusief_top5)
+            break
+        else:
+            print(f"{RED}Ongeldig nummer. Kies een getal tussen 1 en {len(matches)+1}.{RESET}\n")
 
 def main():
     """
@@ -3041,11 +3450,22 @@ def main():
     parser.add_argument("--overround", choices=["linear", "power"], default="power", help="De te gebruiken overround correctiemethode (standaard: power)")
     parser.add_argument("--weight-match-ou", type=float, default=None, help="Gewicht voor wedstrijd Over/Under fit (standaard: 0.5)")
     parser.add_argument("--weight-team-ou", type=float, default=None, help="Gewicht voor team Over/Under fit (standaard: 0.8)")
+    parser.add_argument("--weight-extra-markets", type=float, default=None, dest="weight_extra_markets", help="Gewicht voor BTTS/Clean Sheet fit-termen (standaard: 0.6)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Toon extra debug-informatie, zoals optimalisatie-residuals")
     parser.add_argument("--top5", action="store_true", help="Inclusief top-5 risico-analyse in exports en CLI")
     parser.add_argument("--tiebreak", choices=["probability", "conservative"], default="probability", help="De te gebruiken tie-breaker strategie bij gelijke EV (standaard: probability)")
-    
+    parser.add_argument("--scorer-rate", type=float, default=None, help="De scoringskans van de spits bij MOTD (standaard: 0.35)")
+    parser.add_argument("--yellow-base-min", type=float, default=None, dest="yellow_base_min", help="Basis-mediaan (minuut) eerste gele kaart voor tie-breakers (standaard: 30)")
+    parser.add_argument("--red-card-rate", type=float, default=None, dest="red_card_rate", help="Verwacht aantal rode kaarten per wedstrijd voor tie-breakers (standaard: 0.22)")
+
     args = parser.parse_args()
+
+    # Configureerbare tie-breaker-parameters: override de module-constanten indien opgegeven.
+    global FIRST_YELLOW_BASE_MIN, RED_CARD_RATE
+    if args.yellow_base_min is not None:
+        FIRST_YELLOW_BASE_MIN = args.yellow_base_min
+    if args.red_card_rate is not None:
+        RED_CARD_RATE = args.red_card_rate
     
     # Als polymarket-modus is gekozen:
     if args.polymarket:
@@ -3068,19 +3488,24 @@ def main():
                     ou_probs=m['ou_probs'],
                     team_ou_home=m.get('team_ou_home'),
                     team_ou_away=m.get('team_ou_away'),
+                    btts_prob=m.get('btts_prob'),
+                    clean_sheet_home_prob=m.get('clean_sheet_home_prob'),
+                    clean_sheet_away_prob=m.get('clean_sheet_away_prob'),
                     loss_type=args.loss,
                     overround_method=args.overround,
                     verbose=args.verbose,
                     weight_match_ou=args.weight_match_ou,
                     weight_team_ou=args.weight_team_ou,
-                    tiebreak=args.tiebreak
+                    weight_extra_markets=args.weight_extra_markets,
+                    tiebreak=args.tiebreak,
+                    scorer_rate=args.scorer_rate
                 )
                 alle_res.append((m, res))
                 
             if args.output:
                 exporteer_naar_bestand(alle_res, args.output, inclusief_top5=args.top5)
             if args.web:
-                exporteer_naar_html(alle_res, args.web)
+                exporteer_naar_html(alle_res, args.web, scorer_rate=args.scorer_rate)
             sys.exit(0)
         else:
             try:
@@ -3091,8 +3516,10 @@ def main():
                     verbose=args.verbose,
                     weight_match_ou=args.weight_match_ou,
                     weight_team_ou=args.weight_team_ou,
+                    weight_extra_markets=args.weight_extra_markets,
                     inclusief_top5=args.top5,
-                    tiebreak=args.tiebreak
+                    tiebreak=args.tiebreak,
+                    scorer_rate=args.scorer_rate
                 )
             except (KeyboardInterrupt, SystemExit):
                 print(f"\n\n{YELLOW}Programma afgebroken. Tot ziens! 👋{RESET}\n")
@@ -3108,7 +3535,8 @@ def main():
                 verbose=args.verbose,
                 weight_match_ou=args.weight_match_ou,
                 weight_team_ou=args.weight_team_ou,
-                tiebreak=args.tiebreak
+                tiebreak=args.tiebreak,
+                scorer_rate=args.scorer_rate
             )
         except (KeyboardInterrupt, SystemExit):
             print(f"\n\n{YELLOW}Programma afgebroken. Tot ziens! 👋{RESET}\n")
@@ -3133,10 +3561,12 @@ def main():
             verbose=args.verbose,
             weight_match_ou=args.weight_match_ou,
             weight_team_ou=args.weight_team_ou,
-            tiebreak=args.tiebreak
+            tiebreak=args.tiebreak,
+            scorer_rate=args.scorer_rate
         )
         print_header()
         print_resultaat(res, args.motd, toon_extra=args.extra)
+
 
 if __name__ == "__main__":
     main()
