@@ -1497,9 +1497,6 @@ def exporteer_naar_html(alle_res, bestandsnaam, scorer_rate=None):
                         <!-- Hier komt de top 5 tabel dynamically -->
                     </div>
 
-                    <div class="scorer-tips" id="calc-tiebreakers" style="margin-top: 8px;">
-                        <!-- Hier komen de tie-breakers dynamically -->
-                    </div>
 
                     <div class="scorer-tips" id="result-scorer-tips" style="display: none;">
                         <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
@@ -1655,22 +1652,6 @@ def exporteer_naar_html(alle_res, bestandsnaam, scorer_rate=None):
                 </div>
             """
 
-        tb = res.get("tie_breakers") or bereken_tie_breakers(lam_h, lam_a)
-        rode_minuut = tb.get("rode_kaart_minuut")
-        rode_str = f"{rode_minuut}e min" if rode_minuut is not None else "Geen (&gt; 90e)"
-        html_content += f"""
-                <details class="top-predictions-details" style="grid-column: span 2; margin-top: 4px;">
-                    <summary class="detail-label" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem; user-select: none;">
-                        <span>⏱️ Toernooi Tie-breakers (modelgebaseerd)</span>
-                        <span class="toggle-icon">▼</span>
-                    </summary>
-                    <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem;">
-                        <div class="scorer-row"><span class="scorer-team">1e doelpunt:</span><span class="scorer-name">{tb['eerste_doelpunt_minuut']}e min</span></div>
-                        <div class="scorer-row"><span class="scorer-team">1e gele kaart:</span><span class="scorer-name">{tb['gele_kaart_minuut']}e min</span></div>
-                        <div class="scorer-row"><span class="scorer-team">1e rode kaart:</span><span class="scorer-name">{rode_str}</span></div>
-                    </div>
-                </details>
-        """
 
         html_content += """
             </div>
@@ -1812,13 +1793,6 @@ def exporteer_naar_html(alle_res, bestandsnaam, scorer_rate=None):
                     html += '</tbody></table>';
                     document.getElementById('calc-top-5-container').innerHTML = html;
 
-                    let tb = res.tie_breakers;
-                    let rodeStr = tb.rode_kaart_minuut != null ? (tb.rode_kaart_minuut + 'e min') : 'Geen (&gt; 90e)';
-                    document.getElementById('calc-tiebreakers').innerHTML =
-                        '<span class="detail-label" style="color: var(--accent-blue);">\u23f1\ufe0f Toernooi Tie-breakers (modelgebaseerd)</span>' +
-                        '<div class="scorer-row"><span class="scorer-team">1e doelpunt:</span><span class="scorer-name" style="color: var(--accent-blue);">' + tb.eerste_doelpunt_minuut + 'e min</span></div>' +
-                        '<div class="scorer-row"><span class="scorer-team">1e gele kaart:</span><span class="scorer-name" style="color: var(--accent-blue);">' + tb.gele_kaart_minuut + 'e min</span></div>' +
-                        '<div class="scorer-row"><span class="scorer-team">1e rode kaart:</span><span class="scorer-name" style="color: var(--accent-blue);">' + rodeStr + '</span></div>';
 
                     const scorerDiv = document.getElementById('result-scorer-tips');
                     if (isMotd) {
