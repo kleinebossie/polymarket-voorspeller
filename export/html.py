@@ -1,0 +1,1860 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+HTML en Web Export Module
+------------------------
+Genereert de index.html webpagina met de interactieve JavaScript wiskundige rekenmachine.
+"""
+
+import datetime
+from zoneinfo import ZoneInfo
+
+from model.poisson import (
+    SCORER_HIT_RATE,
+    WEIGHT_MATCH_OU,
+    WEIGHT_TEAM_OU,
+    WEIGHT_EXTRA_MARKETS,
+    FIRST_YELLOW_BASE_MIN,
+    FIRST_YELLOW_REF_LAMBDA,
+    RED_CARD_RATE,
+    RED_CARD_THRESHOLD,
+    RHO_REG,
+    bereken_tie_breakers
+)
+from export.text import converteer_utc_naar_nl
+
+RESET = "\033[0m"
+BOLD = "\033[1m"
+GREEN = "\033[92m"
+RED = "\033[91m"
+
+def _calculator_core_js():
+    """
+    Genereert de gedeelde JavaScript 'calculator core' die de Python-functie voorspel()
+    1-op-1 spiegelt. NIET handmatig aanpassen: bewerk de Python-bron in model/poisson.py en model/ev.py.
+    """
+    js = r'''
+        // =====================================================================
+        // CALCULATOR CORE — automatisch gegenereerd vanuit polymarket_voorspeller.py
+        // (functie _calculator_core_js). NIET handmatig aanpassen: bewerk de Python-bron.
+        // Spiegelt voorspel() zodat de browser identieke adviezen geeft als de CLI.
+        // =====================================================================
+        const WEIGHT_MATCH_OU = __WEIGHT_MATCH_OU__;
+        const WEIGHT_TEAM_OU = __WEIGHT_TEAM_OU__;
+        const WEIGHT_EXTRA_MARKETS = __WEIGHT_EXTRA_MARKETS__;
+        const SCORER_HIT_RATE = __SCORER_HIT_RATE__;
+        const FIRST_YELLOW_BASE_MIN = __FIRST_YELLOW_BASE_MIN__;
+        const FIRST_YELLOW_REF_LAMBDA = __FIRST_YELLOW_REF_LAMBDA__;
+        const RED_CARD_RATE = __RED_CARD_RATE__;
+        const RED_CARD_THRESHOLD = __RED_CARD_THRESHOLD__;
+        const RHO_REG = __RHO_REG__;
+
+        function factorial(n) { let r = 1; for (let i = 2; i <= n; i++) r *= i; return r; }
+        function poisson(lam, k) { return Math.exp(-lam) * Math.pow(lam, k) / factorial(k); }
+        function negBinom(lam, y, r) {
+            if (lam <= 0) return y === 0 ? 1.0 : 0.0;
+            if (r > 1000.0) return poisson(lam, y);
+            let coeff;
+            if (y === 0) {
+                coeff = 1.0;
+            } else {
+                let num = 1.0, den = 1.0;
+                for (let i = 0; i < y; i++) {
+                    num *= (r + i);
+                    den *= (i + 1);
+                }
+                coeff = num / den;
+            }
+            let p = r / (r + lam);
+            let q = lam / (r + lam);
+            try {
+                let logProb = Math.log(coeff) + r * Math.log(p) + y * Math.log(q);
+                return Math.exp(logProb);
+            } catch (e) {
+                return coeff * Math.pow(p, r) * Math.pow(q, y);
+            }
+        }
+        function dixonColesTau(h, a, lh, la, rho) {
+            if (h === 0 && a === 0) return 1.0 - lh * la * rho;
+            if (h === 1 && a === 0) return 1.0 + la * rho;
+            if (h === 0 && a === 1) return 1.0 + lh * rho;
+            if (h === 1 && a === 1) return 1.0 - rho;
+            return 1.0;
+        }
+        function calcMatrix(lh, la, rho, r) {
+            if (rho === undefined) rho = 0.0;
+            let m = [], tot = 0.0;
+            for (let h = 0; h < 10; h++) {
+                m[h] = [];
+                for (let a = 0; a < 10; a++) {
+                    let p;
+                    if (r !== undefined && r !== null) {
+                        p = negBinom(lh, h, r) * negBinom(la, a, r) * dixonColesTau(h, a, lh, la, rho);
+                    } else {
+                        p = poisson(lh, h) * poisson(la, a) * dixonColesTau(h, a, lh, la, rho);
+                    }
+                    p = Math.max(0.0, p); m[h][a] = p; tot += p;
+                }
+            }
+            if (tot > 0.0) { for (let h = 0; h < 10; h++) for (let a = 0; a < 10; a++) m[h][a] /= tot; }
+            return m;
+        }
+        function get1X2(m) {
+            let hw = 0.0, d = 0.0, aw = 0.0;
+            for (let h = 0; h < 10; h++) for (let a = 0; a < 10; a++) {
+                let p = m[h][a];
+                if (h > a) hw += p; else if (h === a) d += p; else aw += p;
+            }
+            return [hw, d, aw];
+        }
+        // Power-method overround (spiegelt normaliseer_kansen_power)
+        // Berekent de parameters op basis van implied probabilities
+        function normPower(kansen, targetSum) {
+            if (targetSum === undefined) targetSum = 1.0;
+            kansen = kansen.map(p => Math.max(0.0001, Math.min(0.9999, p)));
+            let som = kansen.reduce((s, p) => s + p, 0);
+            if (som === 0) return kansen.map(() => 1.0 / kansen.length);
+            if (kansen.length === 1) return [targetSum];
+            if (Math.abs(som - targetSum) < 1e-9) return kansen.map(p => p * (targetSum / som));
+            let kLow, kHigh;
+            if (som > targetSum) {
+                kLow = 1.0; kHigh = 2.0;
+                for (let i = 0; i < 50; i++) { let s = kansen.reduce((acc, p) => acc + Math.pow(p, kHigh), 0); if (s < targetSum) break; kHigh *= 2.0; }
+            } else {
+                kLow = 0.001; kHigh = 1.0;
+                for (let i = 0; i < 50; i++) { let s = kansen.reduce((acc, p) => acc + Math.pow(p, kLow), 0); if (s > targetSum) break; kLow /= 2.0; }
+            }
+            let k = (kLow + kHigh) / 2.0, converged = false;
+            for (let i = 0; i < 100; i++) {
+                let kMid = (kLow + kHigh) / 2.0;
+                let s = kansen.reduce((acc, p) => acc + Math.pow(p, kMid), 0);
+                if (Math.abs(s - targetSum) < 1e-12) { k = kMid; converged = true; break; }
+                if (s > targetSum) kLow = kMid; else kHigh = kMid;
+            }
+            if (!converged) k = (kLow + kHigh) / 2.0;
+            let result = kansen.map(p => Math.pow(p, k));
+            let sRes = result.reduce((s, r) => s + r, 0);
+            if (sRes > 0) result = result.map(r => r * (targetSum / sRes));
+            return result;
+        }
+        function normaliseer1X2(home, draw, away, method) {
+            let isPct = (home > 1.0 || draw > 1.0 || away > 1.0 || (home + draw + away) > 1.5);
+            let h = isPct ? home / 100.0 : home, d = isPct ? draw / 100.0 : draw, a = isPct ? away / 100.0 : away;
+            if (method === 'power') { let n = normPower([h, d, a], 1.0); return [n[0], n[1], n[2]]; }
+            let tot = h + d + a; if (tot === 0) return [0, 0, 0]; return [h / tot, d / tot, a / tot];
+        }
+        // Over/Under fit-term (spiegelt de O/U-lussen in bepaal_poisson_lambdas)
+        function ouError(matrix, lines, kind, lossType, weight, eps) {
+            if (!lines) return 0.0;
+            let keys = Object.keys(lines); if (keys.length === 0) return 0.0;
+            let useRel = keys.length > 1, err = 0.0;
+            for (let key of keys) {
+                let line = parseFloat(key); let vals = lines[key]; let tU = vals[0], tO = vals[1];
+                let u = 0.0, o = 0.0;
+                for (let sh = 0; sh < 10; sh++) for (let sa = 0; sa < 10; sa++) {
+                    let p = matrix[sh][sa];
+                    let metric = (kind === 'match') ? (sh + sa) : (kind === 'home' ? sh : sa);
+                    if (metric < line) u += p;
+                    if (metric > line) o += p;
+                }
+                let wf = 1.0;
+                if (useRel) {
+                    if (vals.length >= 3 && vals[2] != null) wf = 1.0 / Math.max(vals[2], 1e-4);
+                    else { let tot = tU + tO; if (tot > 0) { let pu = tU / tot, po = tO / tot; let vol = Math.sqrt(Math.max(pu * po, 1e-6)); wf = 0.5 / vol; } }
+                }
+                if (lossType === 'logloss') err += -(tU * Math.log(Math.max(u, eps)) + tO * Math.log(Math.max(o, eps))) * weight * wf;
+                else err += (Math.pow(u - tU, 2) + Math.pow(o - tO, 2)) * weight * wf;
+            }
+            return err;
+        }
+        function objective(params, t) {
+            let lh = Math.max(0.05, Math.min(params[0], 5.0));
+            let la = Math.max(0.05, Math.min(params[1], 5.0));
+            let rho = Math.max(-0.25, Math.min(params[2], 0.10));
+            let r_val = (t.model === 'negbinom') ? Math.max(0.1, Math.min(params[3], 50.0)) : null;
+            
+            let matrix = calcMatrix(lh, la, rho, r_val);
+            let g = get1X2(matrix); let h = g[0], d = g[1], a = g[2];
+            let eps = 1e-15, error;
+            if (t.loss_type === 'logloss') error = -(t.target_h * Math.log(Math.max(h, eps)) + t.target_d * Math.log(Math.max(d, eps)) + t.target_a * Math.log(Math.max(a, eps)));
+            else error = Math.pow(h - t.target_h, 2) + Math.pow(d - t.target_d, 2) + Math.pow(a - t.target_a, 2);
+            error += ouError(matrix, t.ou, 'match', t.loss_type, t.weight_match_ou, eps);
+            error += ouError(matrix, t.team_ou_home, 'home', t.loss_type, t.weight_team_ou, eps);
+            error += ouError(matrix, t.team_ou_away, 'away', t.loss_type, t.weight_team_ou, eps);
+            if (t.btts != null) {
+                let p = 0.0; for (let sh = 0; sh < 10; sh++) for (let sa = 0; sa < 10; sa++) { if (sh > 0 && sa > 0) p += matrix[sh][sa]; }
+                if (t.loss_type === 'logloss') error += -(t.btts * Math.log(Math.max(p, eps)) + (1.0 - t.btts) * Math.log(Math.max(1.0 - p, eps))) * t.weight_extra_markets;
+                else error += Math.pow(p - t.btts, 2) * t.weight_extra_markets;
+            }
+            if (t.cs_home != null) {
+                let p = 0.0; for (let sh = 0; sh < 10; sh++) for (let sa = 0; sa < 10; sa++) { if (sa === 0) p += matrix[sh][sa]; }
+                if (t.loss_type === 'logloss') error += -(t.cs_home * Math.log(Math.max(p, eps)) + (1.0 - t.cs_home) * Math.log(Math.max(1.0 - p, eps))) * t.weight_extra_markets;
+                else error += Math.pow(p - t.cs_home, 2) * t.weight_extra_markets;
+            }
+            if (t.cs_away != null) {
+                let p = 0.0; for (let sh = 0; sh < 10; sh++) for (let sa = 0; sa < 10; sa++) { if (sh === 0) p += matrix[sh][sa]; }
+                if (t.loss_type === 'logloss') error += -(t.cs_away * Math.log(Math.max(p, eps)) + (1.0 - t.cs_away) * Math.log(Math.max(1.0 - p, eps))) * t.weight_extra_markets;
+                else error += Math.pow(p - t.cs_away, 2) * t.weight_extra_markets;
+            }
+            error += RHO_REG * (rho * rho);
+            return error;
+        }
+        function nelderMead(start, evalFunc, model) {
+            const isNB = (model === 'negbinom');
+            const clip = (p) => {
+                let res = [
+                    Math.max(0.05, Math.min(p[0], 5.0)),
+                    Math.max(0.05, Math.min(p[1], 5.0)),
+                    Math.max(-0.25, Math.min(p[2], 0.10))
+                ];
+                if (isNB) {
+                    res.push(Math.max(0.1, Math.min(p[3], 50.0)));
+                }
+                return res;
+            };
+            
+            let simplex;
+            if (isNB) {
+                simplex = [
+                    [start[0], start[1], start[2], start[3]],
+                    [start[0] + 0.05 * Math.abs(start[0]) + 1e-4, start[1], start[2], start[3]],
+                    [start[0], start[1] + 0.05 * Math.abs(start[1]) + 1e-4, start[2], start[3]],
+                    [start[0], start[1], start[2] + 0.05, start[3]],
+                    [start[0], start[1], start[2], start[3] + 0.5]
+                ];
+            } else {
+                simplex = [
+                    [start[0], start[1], start[2]],
+                    [start[0] + 0.05 * Math.abs(start[0]) + 1e-4, start[1], start[2]],
+                    [start[0], start[1] + 0.05 * Math.abs(start[1]) + 1e-4, start[2]],
+                    [start[0], start[1], start[2] + 0.05]
+                ];
+            }
+            
+            let N = isNB ? 4 : 3;
+            let nPoints = N + 1;
+            for (let i = 0; i < nPoints; i++) simplex[i] = clip(simplex[i]);
+            let values = simplex.map(p => evalFunc(p));
+            const maxIter = 2000, tol = 1e-16, alpha = 1.0, gamma = 2.0, beta = 0.5, sigma = 0.5;
+            
+            for (let iter = 0; iter < maxIter; iter++) {
+                let idx = Array.from({length: nPoints}, (_, i) => i);
+                idx.sort((x, y) => values[x] - values[y]);
+                simplex = idx.map(i => simplex[i]); values = idx.map(i => values[i]);
+                if (Math.abs(values[N] - values[0]) < tol) break;
+                
+                let c = Array(N).fill(0);
+                for (let j = 0; j < N; j++) {
+                    for (let d = 0; d < N; d++) c[d] += simplex[j][d];
+                }
+                c = c.map(v => v / N);
+                
+                let refl_pt = [];
+                for (let d = 0; d < N; d++) refl_pt.push(c[d] + alpha * (c[d] - simplex[N][d]));
+                let refl = clip(refl_pt);
+                let fR = evalFunc(refl);
+                
+                if (fR < values[N - 1] && fR >= values[0]) { simplex[N] = refl; values[N] = fR; continue; }
+                if (fR < values[0]) {
+                    let ex_pt = [];
+                    for (let d = 0; d < N; d++) ex_pt.push(c[d] + gamma * (refl[d] - c[d]));
+                    let ex = clip(ex_pt);
+                    let fE = evalFunc(ex);
+                    if (fE < fR) { simplex[N] = ex; values[N] = fE; } else { simplex[N] = refl; values[N] = fR; }
+                    continue;
+                }
+                let contracted;
+                if (fR < values[N]) {
+                    let con_pt = [];
+                    for (let d = 0; d < N; d++) con_pt.push(c[d] + beta * (refl[d] - c[d]));
+                    contracted = clip(con_pt);
+                    let fC = evalFunc(contracted);
+                    if (fC <= fR) { simplex[N] = contracted; values[N] = fC; continue; }
+                } else {
+                    let con_pt = [];
+                    for (let d = 0; d < N; d++) con_pt.push(c[d] + beta * (simplex[N][d] - c[d]));
+                    contracted = clip(con_pt);
+                    let fC = evalFunc(contracted);
+                    if (fC < values[N]) { simplex[N] = contracted; values[N] = fC; continue; }
+                }
+                for (let i = 1; i < nPoints; i++) {
+                    let sh_pt = [];
+                    for (let d = 0; d < N; d++) sh_pt.push(simplex[0][d] + sigma * (simplex[i][d] - simplex[0][d]));
+                    simplex[i] = clip(sh_pt);
+                    values[i] = evalFunc(simplex[i]);
+                }
+            }
+            let idx = Array.from({length: nPoints}, (_, i) => i);
+            idx.sort((x, y) => values[x] - values[y]);
+            return clip(simplex[idx[0]]);
+        }
+        function optimize(t) {
+            let starts = [];
+            if (t.model === 'negbinom') {
+                starts.push([1.3, 1.0, -0.05, 4.0]);
+                let mh = -Math.log(Math.max(0.01, Math.min(0.99, t.target_d + t.target_a)));
+                let ma = -Math.log(Math.max(0.01, Math.min(0.99, t.target_h + t.target_d)));
+                mh = Math.max(0.05, Math.min(mh, 5.0)); ma = Math.max(0.05, Math.min(ma, 5.0));
+                starts.push([mh, ma, -0.05, 4.0]);
+                starts.push([0.5, 0.5, -0.05, 2.0]); starts.push([2.5, 1.5, -0.10, 8.0]);
+                starts.push([1.0, 2.5, 0.00, 5.0]); starts.push([3.5, 0.8, -0.15, 12.0]);
+            } else {
+                starts.push([1.3, 1.0, -0.05]);
+                let mh = -Math.log(Math.max(0.01, Math.min(0.99, t.target_d + t.target_a)));
+                let ma = -Math.log(Math.max(0.01, Math.min(0.99, t.target_h + t.target_d)));
+                mh = Math.max(0.05, Math.min(mh, 5.0)); ma = Math.max(0.05, Math.min(ma, 5.0));
+                starts.push([mh, ma, -0.05]);
+                starts.push([0.5, 0.5, -0.05]); starts.push([2.5, 1.5, -0.10]);
+                starts.push([1.0, 2.5, 0.00]); starts.push([3.5, 0.8, -0.15]);
+            }
+            let evalFunc = (p) => objective(p, t);
+            let best = null, bestLoss = Infinity;
+            for (let s of starts) { let res = nelderMead(s, evalFunc, t.model); let l = evalFunc(res); if (l < bestLoss) { bestLoss = l; best = res; } }
+            return best;
+        }
+        function calcEvRegular(ph, pa, m) {
+            let ev = 0.0;
+            for (let ah = 0; ah < 10; ah++) for (let aa = 0; aa < 10; aa++) {
+                let prob = m[ah][aa], pts = 0;
+                if (ph === ah && pa === aa) pts += 10;
+                else { let pt = ph > pa ? 1 : (ph < pa ? -1 : 0); let at = ah > aa ? 1 : (ah < aa ? -1 : 0); if (pt === at) pts += (pt === 0) ? 7 : 5; if (ph === ah) pts += 2; if (pa === aa) pts += 2; }
+                ev += prob * pts;
+            }
+            return ev;
+        }
+        function calcEvMotd(ph, pa, m, scorerRate, psh, psa) {
+            if (scorerRate === undefined) scorerRate = SCORER_HIT_RATE;
+            if (psh === undefined || psh === null) psh = (ph > 0);
+            if (psa === undefined || psa === null) psa = (pa > 0);
+            let scoreEv = 0.0, scorerEv = 0.0;
+            for (let ah = 0; ah < 10; ah++) for (let aa = 0; aa < 10; aa++) {
+                let prob = m[ah][aa], sp = 0;
+                if (ph === ah && pa === aa) sp += 12;
+                else { let pt = ph > pa ? 1 : (ph < pa ? -1 : 0); let at = ah > aa ? 1 : (ah < aa ? -1 : 0); if (pt === at) sp += (pt === 0) ? 8 : 6; if (ph === ah) sp += 2; if (pa === aa) sp += 2; }
+                let scp = 0;
+                if (!psh) { if (ah === 0) scp += 4; } else { if (ah > 0) scp += 4 * scorerRate; }
+                if (!psa) { if (aa === 0) scp += 4; } else { if (aa > 0) scp += 4 * scorerRate; }
+                scoreEv += prob * sp; scorerEv += prob * scp;
+            }
+            return [scoreEv + scorerEv, [psh, psa], scoreEv, scorerEv];
+        }
+        function calcActualPoints(ph, pa, ah, aa, isMotd, scorerRate, psh, psa) {
+            let pts = 0;
+            if (ph === ah && pa === aa) pts += isMotd ? 12 : 10;
+            else {
+                let pt = ph > pa ? 1 : (ph < pa ? -1 : 0); let at = ah > aa ? 1 : (ah < aa ? -1 : 0);
+                if (pt === at) pts += isMotd ? ((pt === 0) ? 8 : 6) : ((pt === 0) ? 7 : 5);
+                if (ph === ah) pts += 2; if (pa === aa) pts += 2;
+            }
+            if (isMotd) {
+                if (!psh) { if (ah === 0) pts += 4; } else { if (ah > 0) pts += 4 * scorerRate; }
+                if (!psa) { if (aa === 0) pts += 4; } else { if (aa > 0) pts += 4 * scorerRate; }
+            }
+            return pts;
+        }
+        function berekenTieBreakers(lh, la) {
+            let lamTotal = Math.max(lh + la, 1e-9);
+            let eersteDoelpunt = Math.round(90.0 * (1.0 - Math.log(2.0)) / lamTotal);
+            eersteDoelpunt = Math.max(1, Math.min(90, eersteDoelpunt));
+            let geleKaart = Math.round(FIRST_YELLOW_BASE_MIN * (FIRST_YELLOW_REF_LAMBDA / lamTotal));
+            geleKaart = Math.max(1, Math.min(90, geleKaart));
+            let effRed = RED_CARD_RATE * (lamTotal / FIRST_YELLOW_REF_LAMBDA);
+            let pRed = 1.0 - Math.exp(-effRed);
+            let rodeKaart = null;
+            if (pRed >= RED_CARD_THRESHOLD) rodeKaart = Math.max(1, Math.min(90, Math.round(90.0 * (1.0 - Math.log(2.0)) / effRed)));
+            return { eerste_doelpunt_minuut: eersteDoelpunt, gele_kaart_minuut: geleKaart, rode_kaart_minuut: rodeKaart, rode_kaart_kans: pRed };
+        }
+        function massaBuiten(m, maxScore) {
+            let s = 0.0; for (let h = 0; h < 10; h++) for (let a = 0; a < 10; a++) { if (h > maxScore || a > maxScore) s += m[h][a]; } return s;
+        }
+        function cmpDesc(a, b, keyFn) { let ka = keyFn(a), kb = keyFn(b); for (let i = 0; i < ka.length; i++) { if (ka[i] !== kb[i]) return kb[i] - ka[i]; } return 0; }
+        function predictMatch(inp) {
+            let lossType = inp.loss_type || 'logloss';
+            let overround = inp.overround_method || 'power';
+            let scorerRate = (inp.scorer_rate != null) ? inp.scorer_rate : SCORER_HIT_RATE;
+            let wMatch = (inp.weight_match_ou != null) ? inp.weight_match_ou : WEIGHT_MATCH_OU;
+            let wTeam = (inp.weight_team_ou != null) ? inp.weight_team_ou : WEIGHT_TEAM_OU;
+            let wExtra = (inp.weight_extra_markets != null) ? inp.weight_extra_markets : WEIGHT_EXTRA_MARKETS;
+            let tiebreak = inp.tiebreak || 'probability';
+            let isMotd = !!inp.is_motd;
+            let model = inp.model || 'poisson';
+            let g = normaliseer1X2(inp.home_pct, inp.draw_pct, inp.away_pct, overround);
+            let pH = g[0], pD = g[1], pA = g[2];
+            let t = {
+                target_h: pH, target_d: pD, target_a: pA,
+                ou: inp.ou_probs || null, team_ou_home: inp.team_ou_home || null, team_ou_away: inp.team_ou_away || null,
+                btts: (inp.btts_prob != null ? inp.btts_prob : null),
+                cs_home: (inp.clean_sheet_home_prob != null ? inp.clean_sheet_home_prob : null),
+                cs_away: (inp.clean_sheet_away_prob != null ? inp.clean_sheet_away_prob : null),
+                loss_type: lossType, weight_match_ou: wMatch, weight_team_ou: wTeam, weight_extra_markets: wExtra,
+                model: model
+            };
+            let opt = optimize(t);
+            let lamH = opt[0], lamA = opt[1], rho = opt[2];
+            let rVal = (model === 'negbinom') ? opt[3] : null;
+            let matrix = calcMatrix(lamH, lamA, rho, rVal);
+            let maxScore = Math.min(9, Math.ceil(Math.max(lamH, lamA) + 2));
+            let buiten = massaBuiten(matrix, maxScore);
+            if (buiten > 0.01 && maxScore < 9) { maxScore += 1; buiten = massaBuiten(matrix, maxScore); }
+            let optSh = false, optSa = false, scorerEvH = 0.0, scorerEvA = 0.0;
+            if (isMotd) {
+                let pHgt = 0.0, pAgt = 0.0;
+                for (let ah = 0; ah < 10; ah++) for (let aa = 0; aa < 10; aa++) { let p = matrix[ah][aa]; if (ah > 0) pHgt += p; if (aa > 0) pAgt += p; }
+                let evSpitsH = 4 * scorerRate * pHgt, evGeenH = 4 * (1.0 - pHgt);
+                if (evSpitsH >= evGeenH) { optSh = true; scorerEvH = evSpitsH; } else { optSh = false; scorerEvH = evGeenH; }
+                let evSpitsA = 4 * scorerRate * pAgt, evGeenA = 4 * (1.0 - pAgt);
+                if (evSpitsA >= evGeenA) { optSa = true; scorerEvA = evSpitsA; } else { optSa = false; scorerEvA = evGeenA; }
+            }
+            let preds = [];
+            for (let h = 0; h <= maxScore; h++) for (let a = 0; a <= maxScore; a++) {
+                let ev, scoreEv, scorerEv, scorers;
+                if (isMotd) { let r = calcEvMotd(h, a, matrix, scorerRate, optSh, optSa); ev = r[0]; scorers = r[1]; scoreEv = r[2]; scorerEv = r[3]; }
+                else { ev = calcEvRegular(h, a, matrix); scorers = [false, false]; scoreEv = ev; scorerEv = 0.0; }
+                let prob = matrix[h][a] || 0.0;
+                let p1 = 0.0, p5 = 0.0;
+                for (let ah = 0; ah < 10; ah++) for (let aa = 0; aa < 10; aa++) {
+                    let ap = matrix[ah][aa];
+                    let pts = calcActualPoints(h, a, ah, aa, isMotd, scorerRate, optSh, optSa);
+                    if (pts >= 1.0) p1 += ap; if (pts >= 5.0) p5 += ap;
+                }
+                preds.push({ uitslag: h + '-' + a, h: h, a: a, ev: ev, score_ev: scoreEv, scorer_ev: scorerEv, kans: prob * 100.0, p_exact: prob, p_1pt: p1, p_5pt: p5, scorers: scorers });
+            }
+            let keyFn;
+            if (tiebreak === 'conservative') keyFn = (x) => [x.ev, -(x.h + x.a), -x.h, x.p_exact, x.p_5pt];
+            else keyFn = (x) => [x.ev, x.p_exact, x.p_5pt, -(x.h + x.a), -x.h];
+            preds.sort((a, b) => cmpDesc(a, b, keyFn));
+            let secondBest = preds.length > 1 ? preds[1].ev : 0.0;
+            preds.forEach(p => { p.delta_ev = p.ev - secondBest; });
+            let top5 = preds.slice(0, 5);
+            let best = preds[0];
+            let result = {
+                genormaliseerd: [pH, pD, pA], lambda: [lamH, lamA], rho: rho, r: rVal, uitslag: best.h + '-' + best.a,
+                xpts: best.ev, score_ev: best.score_ev, scorer_ev: best.scorer_ev, scorer_rate: scorerRate,
+                top_5: top5, tie_breakers: berekenTieBreakers(lamH, lamA), is_motd: isMotd,
+                scorer_ev_thuis: isMotd ? scorerEvH : 0.0, scorer_ev_uit: isMotd ? scorerEvA : 0.0,
+                scorer_thuis_bool: isMotd ? best.scorers[0] : false, scorer_uit_bool: isMotd ? best.scorers[1] : false
+            };
+            result.scorer_tip_onafhankelijk = isMotd ? ((best.scorers[0] !== (best.h > 0)) || (best.scorers[1] !== (best.a > 0))) : false;
+            return result;
+        }
+        if (typeof module !== 'undefined' && module.exports) {
+            module.exports = { predictMatch, calcMatrix, normPower, normaliseer1X2, berekenTieBreakers, optimize, get1X2 };
+        }
+'''
+    replacements = {
+        "__WEIGHT_MATCH_OU__": repr(float(WEIGHT_MATCH_OU)),
+        "__WEIGHT_TEAM_OU__": repr(float(WEIGHT_TEAM_OU)),
+        "__WEIGHT_EXTRA_MARKETS__": repr(float(WEIGHT_EXTRA_MARKETS)),
+        "__SCORER_HIT_RATE__": repr(float(SCORER_HIT_RATE)),
+        "__FIRST_YELLOW_BASE_MIN__": repr(float(FIRST_YELLOW_BASE_MIN)),
+        "__FIRST_YELLOW_REF_LAMBDA__": repr(float(FIRST_YELLOW_REF_LAMBDA)),
+        "__RED_CARD_RATE__": repr(float(RED_CARD_RATE)),
+        "__RED_CARD_THRESHOLD__": repr(float(RED_CARD_THRESHOLD)),
+        "__RHO_REG__": repr(float(RHO_REG)),
+    }
+    for token, value in replacements.items():
+        js = js.replace(token, value)
+    return js
+
+def exporteer_naar_html(alle_res, bestandsnaam, scorer_rate=None):
+    """
+    Genereert een prachtige, mobielvriendelijke HTML-pagina (index.html) met de voorspellingen.
+    """
+    if scorer_rate is None:
+        scorer_rate = SCORER_HIT_RATE
+        
+    nu_nl = datetime.datetime.now(ZoneInfo("Europe/Amsterdam"))
+    nu_str = nu_nl.strftime("%d-%m-%Y %H:%M")
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WK 2026 Voorspellingen - Polymarket</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-green: #10b981;
+            --accent-yellow: #f59e0b;
+            --accent-blue: #06b6d4;
+            --accent-red: #ef4444;
+        }}
+        
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        
+        body {{
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(6, 182, 212, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.15) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-primary);
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }}
+        
+        header {{
+            text-align: center;
+            margin-bottom: 30px;
+            margin-top: 10px;
+            max-width: 600px;
+            width: 100%;
+            animation: fadeInDown 0.8s ease-out;
+        }}
+        
+        h1 {{
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -0.05em;
+            background: linear-gradient(135deg, #06b6d4, #10b981);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }}
+        
+        .subtitle {{
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }}
+        
+        .last-updated {{
+            display: inline-block;
+            margin-top: 8px;
+            font-size: 0.8rem;
+            color: var(--accent-blue);
+            background: rgba(6, 182, 212, 0.1);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+        }}
+        
+        .container {{
+            max-width: 600px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            animation: fadeInUp 0.8s ease-out;
+        }}
+        
+        .match-card {{
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }}
+        
+        .match-card:hover {{
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }}
+        
+        .match-card::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: transparent;
+            transition: background 0.3s;
+        }}
+        
+        .match-card.is-motd::before {{
+            background: linear-gradient(90deg, var(--accent-yellow), transparent);
+        }}
+        
+        .match-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            font-weight: 600;
+        }}
+        
+        .motd-badge {{
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-yellow);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }}
+        
+        .match-teams {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }}
+        
+        .team {{
+            font-size: 1.15rem;
+            font-weight: 600;
+            width: 40%;
+        }}
+        
+        .team.home {{
+            text-align: right;
+        }}
+        
+        .team.away {{
+            text-align: left;
+        }}
+        
+        .vs-text {{
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-weight: 600;
+        }}
+        
+        .match-details {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 14px;
+        }}
+        
+        .detail-item {{
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }}
+        
+        .detail-label {{
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }}
+        
+        .detail-value {{
+            font-size: 0.9rem;
+            font-weight: 600;
+        }}
+        
+        .prediction-box {{
+            grid-column: span 2;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 12px;
+            padding: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        
+        .match-card.is-motd .prediction-box {{
+            background: rgba(245, 158, 11, 0.07);
+            border-color: rgba(245, 158, 11, 0.15);
+        }}
+        
+        .pred-score {{
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: var(--accent-green);
+        }}
+        
+        .match-card.is-motd .pred-score {{
+            color: var(--accent-yellow);
+        }}
+        
+        .scorer-tips {{
+            grid-column: span 2;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 10px;
+            padding: 10px;
+            font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }}
+        
+        .scorer-row {{
+            display: flex;
+            justify-content: space-between;
+        }}
+        
+        .scorer-team {{
+            color: var(--text-secondary);
+        }}
+        
+        .scorer-name {{
+            font-weight: 600;
+            color: var(--accent-yellow);
+        }}
+        
+        @keyframes fadeInDown {{
+            from {{
+                opacity: 0;
+                transform: translateY(-20px);
+            }}
+            to {{
+                opacity: 1;
+                transform: translateY(0);
+            }}
+        }}
+        
+        @keyframes fadeInUp {{
+            from {{
+                opacity: 0;
+                transform: translateY(20px);
+            }}
+            to {{
+                opacity: 1;
+                transform: translateY(0);
+            }}
+        }}
+        
+        @media (max-width: 480px) {{
+            body {{
+                padding: 12px;
+            }}
+            h1 {{
+                font-size: 1.8rem;
+            }}
+            .team {{
+                font-size: 1rem;
+            }}
+        }}
+
+        /* Rekenmodule Calculator Styles */
+        .calculator-card {{
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(6, 182, 212, 0.2);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 8px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.05);
+        }}
+        
+        .calculator-card:hover {{
+            border-color: rgba(6, 182, 212, 0.4);
+            box-shadow: 0 8px 30px rgba(6, 182, 212, 0.12);
+        }}
+        
+        .calculator-card::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-green));
+        }}
+        
+        .calc-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            padding-bottom: 4px;
+        }}
+        
+        .calc-header h2 {{
+            font-size: 1.25rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            background: linear-gradient(135deg, #06b6d4, #10b981);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+        
+        .calc-toggle-icon {{
+            font-size: 1.1rem;
+            color: var(--accent-blue);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }}
+        
+        .calculator-card.collapsed .calc-toggle-icon {{
+            transform: rotate(-90deg);
+        }}
+        
+        .calc-body {{
+            margin-top: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            max-height: 1200px;
+            transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s, margin-top 0.4s;
+            opacity: 1;
+        }}
+        
+        .calculator-card.collapsed .calc-body {{
+            max-height: 0;
+            margin-top: 0;
+            opacity: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }}
+        
+        .calc-section-title {{
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }}
+        
+        .form-row {{
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }}
+        
+        .form-group {{
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }}
+        
+        .form-group label {{
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }}
+        
+        .input-wrapper {{
+            position: relative;
+            display: flex;
+            align-items: center;
+        }}
+        
+        .input-wrapper input, .input-wrapper select {{
+            width: 100%;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 10px 12px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }}
+        
+        .input-wrapper input:focus, .input-wrapper select:focus {{
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.15);
+            background: rgba(15, 23, 42, 0.8);
+        }}
+        
+        .input-wrapper .input-suffix {{
+            position: absolute;
+            right: 12px;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            pointer-events: none;
+            font-weight: 600;
+        }}
+        
+        .input-wrapper.has-suffix input {{
+            padding-right: 28px;
+        }}
+        
+        /* Switch Toggle */
+        .toggle-group {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.3);
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            transition: all 0.2s ease;
+        }}
+        
+        .toggle-group:hover {{
+            border-color: rgba(255, 255, 255, 0.12);
+            background: rgba(15, 23, 42, 0.4);
+        }}
+        
+        .toggle-label-container {{
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }}
+        
+        .toggle-title {{
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }}
+        
+        .toggle-desc {{
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+        }}
+        
+        .switch {{
+            position: relative;
+            display: inline-block;
+            width: 46px;
+            height: 24px;
+            flex-shrink: 0;
+        }}
+        
+        .switch input {{
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }}
+        
+        .slider {{
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(15, 23, 42, 0.8);
+            transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 34px;
+            border: 1px solid var(--border-color);
+        }}
+        
+        .slider:before {{
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: var(--text-secondary);
+            transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 50%;
+        }}
+        
+        input:checked + .slider {{
+            background-color: rgba(6, 182, 212, 0.2);
+            border-color: var(--accent-blue);
+        }}
+        
+        input:checked + .slider:before {{
+            transform: translateX(22px);
+            background-color: var(--accent-blue);
+        }}
+        
+        /* Optional Over/Under section */
+        .ou-toggle-btn {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-size: 0.8rem;
+            color: var(--accent-blue);
+            cursor: pointer;
+            font-weight: 600;
+            user-select: none;
+            transition: all 0.2s ease;
+        }}
+        
+        .ou-toggle-btn:hover {{
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(6, 182, 212, 0.3);
+        }}
+        
+        .ou-toggle-btn .caret {{
+            font-size: 0.8rem;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }}
+        
+        .ou-toggle-btn.expanded .caret {{
+            transform: rotate(180deg);
+        }}
+        
+        .ou-container {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            background: rgba(15, 23, 42, 0.25);
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px dashed var(--border-color);
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+            transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s, padding 0.4s;
+            padding-top: 0;
+            padding-bottom: 0;
+            border-width: 0;
+        }}
+        
+        .ou-container.expanded {{
+            max-height: 400px;
+            opacity: 1;
+            padding-top: 14px;
+            padding-bottom: 14px;
+            border-width: 1px;
+            margin-top: 4px;
+        }}
+        
+        .ou-team-column {{
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }}
+        
+        .ou-team-title {{
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }}
+        
+        /* Calculate Button */
+        .calc-btn {{
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-family: inherit;
+            font-weight: 800;
+            font-size: 0.95rem;
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.25);
+            margin-top: 6px;
+        }}
+        
+        .calc-btn:hover {{
+            filter: brightness(1.08);
+            box-shadow: 0 6px 20px rgba(6, 182, 212, 0.4);
+            transform: translateY(-1px);
+        }}
+        
+        .calc-btn:active {{
+            transform: translateY(1px);
+            box-shadow: 0 2px 10px rgba(16, 185, 129, 0.2);
+        }}
+        
+        /* Results Card style */
+        .calc-results-wrapper {{
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 18px;
+            margin-top: 4px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.4s ease-out;
+        }}
+        
+        .calc-results-wrapper.visible {{
+            display: flex;
+            opacity: 1;
+            transform: translateY(0);
+        }}
+        
+        .calc-results-card {{
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+        }}
+        
+        .calculator-card.is-motd-active .calc-results-card {{
+            background: rgba(245, 158, 11, 0.06);
+            border-color: rgba(245, 158, 11, 0.18);
+        }}
+        
+        .calc-results-details {{
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }}
+        
+        .calc-results-score {{
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--accent-green);
+            line-height: 1;
+        }}
+        
+        .calculator-card.is-motd-active .calc-results-score {{
+            color: var(--accent-yellow);
+        }}
+        
+        .calc-error-message {{
+            display: none;
+            color: var(--accent-red);
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-top: 4px;
+        }}
+        
+        /* Spinner */
+        .spinner {{
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.6s linear infinite;
+            display: none;
+        }}
+        
+        @keyframes spin {{
+            to {{ transform: rotate(360deg); }}
+        }}
+        
+        /* Top 5 predictions table */
+        .top-predictions-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 6px;
+            font-size: 0.82rem;
+        }}
+        
+        .top-predictions-table th, .top-predictions-table td {{
+            padding: 6px 8px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }}
+        
+        .top-predictions-table th {{
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.05em;
+        }}
+        
+        .top-predictions-table tr:last-child td {{
+            border-bottom: none;
+        }}
+        
+        .top-predictions-table tr.rank-1 td {{
+            color: var(--accent-green);
+        }}
+        
+        .top-predictions-table tr.rank-1 {{
+            background: rgba(16, 185, 129, 0.08);
+            font-weight: 600;
+        }}
+        
+        .is-motd .top-predictions-table tr.rank-1 td,
+        .is-motd-active .top-predictions-table tr.rank-1 td {{
+            color: var(--accent-yellow);
+        }}
+        
+        .is-motd .top-predictions-table tr.rank-1,
+        .is-motd-active .top-predictions-table tr.rank-1 {{
+            background: rgba(245, 158, 11, 0.08);
+        }}
+        
+        .badge-rank {{
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+        }}
+        
+        .rank-1 .badge-rank {{
+            background: var(--accent-green);
+            color: var(--bg-color);
+        }}
+        
+        .is-motd .rank-1 .badge-rank,
+        .is-motd-active .rank-1 .badge-rank {{
+            background: var(--accent-yellow);
+            color: var(--bg-color);
+        }}
+        
+        details.top-predictions-details {{
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.01);
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }}
+        details.top-predictions-details[open] {{
+            background: rgba(255, 255, 255, 0.03);
+            border-color: rgba(255, 255, 255, 0.12);
+        }}
+        details.top-predictions-details summary {{
+            list-style: none;
+            outline: none;
+        }}
+        details.top-predictions-details summary::-webkit-details-marker {{
+            display: none;
+        }}
+        details.top-predictions-details summary .toggle-icon {{
+            transition: transform 0.2s ease;
+            font-size: 0.7rem;
+            color: var(--accent-blue);
+        }}
+        details.top-predictions-details[open] summary .toggle-icon {{
+            transform: rotate(180deg);
+        }}
+        
+        @media (max-width: 480px) {{
+            .ou-container {{
+                grid-template-columns: 1fr;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🏆 WK 2026 Voorspeller</h1>
+        <div class="subtitle">Wiskundig optimale uitslagen berekend op basis van live winstkansen van Polymarket data.</div>
+        <div class="last-updated">Geüpdatet: {nu_str} CEST</div>
+    </header>
+    
+    <div class="container">
+
+        <!-- Rekenmodule Calculator -->
+        <div class="match-card calculator-card collapsed" id="prediction-calculator">
+            <div class="calc-header" onclick="toggleCalculator()">
+                <h2><span>🧮 Interactieve Rekenmodule</span></h2>
+                <span class="calc-toggle-icon">▼</span>
+            </div>
+            
+            <div class="calc-body">
+                <div class="calc-section">
+                    <span class="calc-section-title">📊 1X2 Kansen (Implied Odds)</span>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="input-win-home">Thuiswinst</label>
+                            <div class="input-wrapper has-suffix">
+                                <input type="number" id="input-win-home" value="66" min="0" max="100" step="1" oninput="validateSum1X2()">
+                                <span class="input-suffix">%</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="input-win-draw">Gelijkspel</label>
+                            <div class="input-wrapper has-suffix">
+                                <input type="number" id="input-win-draw" value="22" min="0" max="100" step="1" oninput="validateSum1X2()">
+                                <span class="input-suffix">%</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="input-win-away">Uitwinst</label>
+                            <div class="input-wrapper has-suffix">
+                                <input type="number" id="input-win-away" value="12" min="0" max="100" step="1" oninput="validateSum1X2()">
+                                <span class="input-suffix">%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="calc-error-message" id="calc-error-1x2">De som van de kansen mag niet 0 zijn. De ingevoerde kansen worden automatisch genormaliseerd naar 100%.</div>
+                </div>
+                
+                <div class="toggle-group">
+                    <div class="toggle-label-container">
+                        <span class="toggle-title">Wedstrijd van de Dag (MOTD)</span>
+                        <span class="toggle-desc">Activeert extra punten voor doelpuntenmakers in de EV-berekening.</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="input-is-motd" onchange="toggleMotdStyle()">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <div class="toggle-group" id="scorer-rate-wrapper" style="display: none; border-top: 1px solid var(--border-color); padding-top: 15px; margin-top: 15px;">
+                    <div class="toggle-label-container">
+                        <span class="toggle-title">Scorer Hit-Rate</span>
+                        <span class="toggle-desc">Verwachte kans dat de spits scoort als het team scoort.</span>
+                    </div>
+                    <div class="input-wrapper" style="width: 80px;">
+                        <input type="number" id="input-scorer-rate" value="{scorer_rate:.2f}" min="0.0" max="1.0" step="0.05" style="text-align: right; padding-right: 10px;">
+                    </div>
+                </div>
+
+                <div class="calc-section">
+                    <div class="ou-toggle-btn" onclick="toggleOuSection()" id="ou-btn">
+                        <span>🛡️ Geavanceerde Team Over/Under Odds (Optioneel)</span>
+                        <span class="caret">▼</span>
+                    </div>
+                    
+                    <div class="ou-container" id="ou-fields-container">
+                        <!-- Thuisploeg Over/Under -->
+                        <div class="ou-team-column">
+                            <div class="ou-team-title">🏠 Thuisploeg</div>
+                            <div class="form-group">
+                                <label for="ou-home-line">Doelpuntenlijn</label>
+                                <div class="input-wrapper">
+                                    <select id="ou-home-line">
+                                        <option value="0.5">0.5</option>
+                                        <option value="1.5" selected>1.5</option>
+                                        <option value="2.5">2.5</option>
+                                        <option value="3.5">3.5</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row" style="grid-template-columns: 1fr 1fr;">
+                                <div class="form-group">
+                                    <label for="ou-home-under">Kans Under</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="ou-home-under" placeholder="Optioneel" min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ou-home-over">Kans Over</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="ou-home-over" placeholder="Optioneel" min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Uitploeg Over/Under -->
+                        <div class="ou-team-column">
+                            <div class="ou-team-title">✈️ Uitploeg</div>
+                            <div class="form-group">
+                                <label for="ou-away-line">Doelpuntenlijn</label>
+                                <div class="input-wrapper">
+                                    <select id="ou-away-line">
+                                        <option value="0.5">0.5</option>
+                                        <option value="1.5" selected>1.5</option>
+                                        <option value="2.5">2.5</option>
+                                        <option value="3.5">3.5</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row" style="grid-template-columns: 1fr 1fr;">
+                                <div class="form-group">
+                                    <label for="ou-away-under">Kans Under</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="ou-away-under" placeholder="Optioneel" min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ou-away-over">Kans Over</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="ou-away-over" placeholder="Optioneel" min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="calc-section">
+                    <div class="ou-toggle-btn" onclick="toggleExtraSection()" id="extra-btn">
+                        <span>⚽ Wedstrijd O/U &amp; Extra Markten (Optioneel)</span>
+                        <span class="caret">▼</span>
+                    </div>
+
+                    <div class="ou-container" id="extra-fields-container" style="grid-template-columns: 1fr 1fr;">
+                        <!-- Wedstrijd Over/Under -->
+                        <div class="ou-team-column">
+                            <div class="ou-team-title">🥅 Wedstrijd Totaal</div>
+                            <div class="form-group">
+                                <label for="ou-match-line">Doelpuntenlijn</label>
+                                <div class="input-wrapper">
+                                    <select id="ou-match-line">
+                                        <option value="1.5">1.5</option>
+                                        <option value="2.5" selected>2.5</option>
+                                        <option value="3.5">3.5</option>
+                                        <option value="4.5">4.5</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row" style="grid-template-columns: 1fr 1fr;">
+                                <div class="form-group">
+                                    <label for="ou-match-under">Kans Under</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="ou-match-under" placeholder="Optioneel" min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ou-match-over">Kans Over</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="ou-match-over" placeholder="Optioneel" min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Extra markten -->
+                        <div class="ou-team-column">
+                            <div class="ou-team-title">🎯 Extra Markten</div>
+                            <div class="form-group">
+                                <label for="input-btts">Beide teams scoren (Ja)</label>
+                                <div class="input-wrapper has-suffix">
+                                    <input type="number" id="input-btts" placeholder="Optioneel" min="0" max="100" step="1">
+                                    <span class="input-suffix">%</span>
+                                </div>
+                            </div>
+                            <div class="form-row" style="grid-template-columns: 1fr 1fr;">
+                                <div class="form-group">
+                                    <label for="input-cs-home">Clean sheet thuis</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="input-cs-home" placeholder="Opt." min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="input-cs-away">Clean sheet uit</label>
+                                    <div class="input-wrapper has-suffix">
+                                        <input type="number" id="input-cs-away" placeholder="Opt." min="0" max="100" step="1">
+                                        <span class="input-suffix">%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="calc-btn" onclick="calculatePrediction()">
+                    <span class="spinner" id="calc-spinner"></span>
+                    <span id="calc-btn-text">Bereken Optimale Voorspelling</span>
+                </button>
+                
+                <!-- Resultaten -->
+                <div class="calc-results-wrapper" id="results-wrapper">
+                    <span class="calc-results-title">🏆 Wiskundig Optimaal Advies</span>
+                    <div class="calc-results-card">
+                        <div class="calc-results-details">
+                            <span class="detail-label" style="color: var(--text-primary); font-size: 0.8rem;">Aanbevolen Uitslag</span>
+                            <span class="subtitle" style="font-size: 0.75rem; margin-bottom: 2px;">
+                                Verwachte Punten (EV): <strong style="color: var(--accent-blue);" id="result-ev">0.00 pts</strong>
+                            </span>
+                            <span class="subtitle" style="font-size: 0.75rem;" id="result-xg">
+                                xG Thuis: 0.00 | xG Uit: 0.00 (ρ: 0.00)
+                            </span>
+                        </div>
+                        <span class="calc-results-score" id="result-score">0-0</span>
+                    </div>
+                    
+                    <div id="calc-top-5-container" style="margin-top: 8px;">
+                        <!-- Hier komt de top 5 tabel dynamically -->
+                    </div>
+
+                    <div class="scorer-tips" id="calc-tiebreakers" style="margin-top: 8px;">
+                        <!-- Hier komen de tie-breakers dynamically -->
+                    </div>
+
+                    <div class="scorer-tips" id="result-scorer-tips" style="display: none;">
+                        <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
+                        <div class="scorer-row">
+                            <span class="scorer-team">Thuisploeg:</span>
+                            <span class="scorer-name" id="result-scorer-home">Geen score</span>
+                        </div>
+                        <div class="scorer-row">
+                            <span class="scorer-team">Uitploeg:</span>
+                            <span class="scorer-name" id="result-scorer-away">Geen score</span>
+                        </div>
+                        <div class="scorer-factor-info" id="result-scorer-split-ev" style="margin-top: 8px; font-size: 0.75rem; color: var(--text-secondary); border-top: 1px solid var(--border-color); padding-top: 6px; display: flex; justify-content: space-between; width: 100%;">
+                            <span>Score EV: <strong id="result-score-ev-val">0.00 pts</strong></span>
+                            <span>Scorer EV: <strong id="result-scorer-ev-val">0.00 pts</strong></span>
+                            <span>Factor: <strong id="result-scorer-factor-val">0.35</strong></span>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+"""
+    
+    for m, res in alle_res:
+        top_5_html = '<table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>EV</th><th>Kans</th><th>P(&ge;1pt)</th><th>P(&ge;5pt)</th><th style="text-align: right;">&Delta;EV</th></tr></thead><tbody>'
+        for rank_idx, pred in enumerate(res.get("top_5", [])):
+            rank = rank_idx + 1
+            is_rank_1 = (rank == 1)
+            rank_class = f"rank-{rank}"
+            badge_text = "Hoofdadvies" if is_rank_1 else f"#{rank}"
+            
+            uitslag_val = pred["uitslag"]
+            kans_val = f"{pred['kans']:.1f}%"
+            ev_val_str = f"{pred['ev']:.2f} pts"
+            p1_val_str = f"{pred.get('p_1pt', 0.0)*100:.1f}%"
+            p5_val_str = f"{pred.get('p_5pt', 0.0)*100:.1f}%"
+            
+            delta_val = pred.get("delta_ev", 0.0)
+            if delta_val == 0.0:
+                delta_val_str = "0.00"
+                delta_color = "var(--text-secondary)"
+            elif delta_val > 0.0:
+                delta_val_str = f"{delta_val:+.2f}"
+                delta_color = "var(--accent-green)"
+            else:
+                delta_val_str = f"{delta_val:+.2f}"
+                delta_color = "var(--accent-red)"
+            
+            top_5_html += f"""
+            <tr class="{rank_class}">
+                <td><span class="badge-rank">{badge_text}</span></td>
+                <td><strong>{uitslag_val}</strong></td>
+                <td>{ev_val_str}</td>
+                <td>{kans_val}</td>
+                <td>{p1_val_str}</td>
+                <td>{p5_val_str}</td>
+                <td style="text-align: right; font-weight: 600; color: {delta_color};">{delta_val_str}</td>
+            </tr>
+            """
+        top_5_html += "</tbody></table>"
+
+        motd_badge = '<span class="motd-badge">Wedstrijd van de Dag</span>' if m["is_motd"] else ''
+        card_class = 'is-motd' if m["is_motd"] else ''
+        datum_str = converteer_utc_naar_nl(m['date'])
+        kansen_str = f"{m['home_prob']:.0f}% / {m['draw_prob']:.0f}% / {m['away_prob']:.0f}%"
+        lam_h, lam_a = res["lambda"]
+        rho = res.get("rho", 0.0)
+        ev_val = res.get("xpts", 0.0)
+        
+        team_ou_home = m.get('team_ou_home', {})
+        team_ou_away = m.get('team_ou_away', {})
+        
+        team_indicator_html = ""
+        team_ou_html = ""
+        if team_ou_home or team_ou_away:
+            team_indicator_html = " ✓ team O/U"
+            
+            team_ou_html = '<div class="detail-item" style="grid-column: span 2;">'
+            team_ou_html += '<span class="detail-label">Ploeg Totals (Polymarket)</span>'
+            team_ou_html += '<div style="display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.85rem;">'
+            
+            for line in sorted(set(list(team_ou_home.keys()) + list(team_ou_away.keys()))):
+                if line in team_ou_home:
+                    u, o = team_ou_home[line]
+                    team_ou_html += f'<span style="color: var(--accent-blue);">{m["home"]}: O{line} {o*100:.0f}%</span>'
+                if line in team_ou_away:
+                    u, o = team_ou_away[line]
+                    team_ou_html += f'<span style="color: var(--accent-blue);">{m["away"]}: O{line} {o*100:.0f}%</span>'
+            
+            team_ou_html += '</div></div>'
+            
+        html_content += f"""
+        <div class="match-card {card_class}">
+            <div class="match-header">
+                <span>📅 {datum_str}</span>
+                {motd_badge}
+            </div>
+            <div class="match-teams">
+                <span class="team home">{m['home']}</span>
+                <span class="vs-text">VS</span>
+                <span class="team away">{m['away']}</span>
+            </div>
+            <div class="match-details">
+                <div class="detail-item">
+                    <span class="detail-label">Odds (1/X/2)</span>
+                    <span class="detail-value">{kansen_str}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">xG (Verwacht)</span>
+                    <span class="detail-value">{lam_h:.2f} - {lam_a:.2f} (ρ: {rho:.2f}){team_indicator_html}</span>
+                </div>
+                {team_ou_html}
+                
+                <div class="prediction-box">
+                    <div class="detail-item">
+                        <span class="detail-label" style="color: var(--text-primary);">Aanbevolen Uitslag</span>
+                        <span class="subtitle" style="font-size: 0.75rem;">Verwachte Punten (EV): <strong style="color: var(--accent-blue);">{res.get('xpts', 0.0):.2f} pts</strong></span>
+                    </div>
+                    <span class="pred-score">{res['uitslag']}</span>
+                </div>
+                
+                <details class="top-predictions-details" style="grid-column: span 2; margin-top: 4px;">
+                    <summary class="detail-label" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem; user-select: none;">
+                        <span>📊 Top 5 Verwachte Uitslagen (Risico-inzicht)</span>
+                        <span class="toggle-icon">▼</span>
+                    </summary>
+                    <div style="margin-top: 8px;">
+                        {top_5_html}
+                    </div>
+                </details>
+        """
+        
+        if m["is_motd"]:
+            thuis_tip = "Spits (of penaltynemer)" if "spits" in res["scorer_thuis"].lower() else "Geen score"
+            uit_tip = "Spits (of penaltynemer)" if "spits" in res["scorer_uit"].lower() else "Geen score"
+            
+            html_content += f"""
+                <div class="scorer-tips">
+                    <span class="detail-label" style="color: var(--accent-yellow);">Doelpuntenmaker Tips (MOTD)</span>
+                    <div class="scorer-row">
+                        <span class="scorer-team">{m['home']}:</span>
+                        <span class="scorer-name">{thuis_tip}</span>
+                    </div>
+                    <div class="scorer-row">
+                        <span class="scorer-team">{m['away']}:</span>
+                        <span class="scorer-name">{uit_tip}</span>
+                    </div>
+                    <div class="scorer-factor-info" style="margin-top: 8px; font-size: 0.75rem; color: var(--text-secondary); border-top: 1px solid var(--border-color); padding-top: 6px; display: flex; justify-content: space-between;">
+                        <span>Score EV: <strong>{res.get('score_ev', 0.0):.2f} pts</strong></span>
+                        <span>Scorer EV: <strong>{res.get('scorer_ev', 0.0):.2f} pts</strong></span>
+                        <span>Factor: <strong>{res.get('scorer_rate', SCORER_HIT_RATE):.2f}</strong></span>
+                    </div>
+                </div>
+            """
+
+        tb = res.get("tie_breakers") or bereken_tie_breakers(lam_h, lam_a)
+        rode_minuut = tb.get("rode_kaart_minuut")
+        rode_str = f"{rode_minuut}e min" if rode_minuut is not None else "Geen (&gt; 90e)"
+        html_content += f"""
+                <details class="top-predictions-details" style="grid-column: span 2; margin-top: 4px;">
+                    <summary class="detail-label" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: var(--text-secondary); font-size: 0.75rem; user-select: none;">
+                        <span>⏱️ Toernooi Tie-breakers (modelgebaseerd)</span>
+                        <span class="toggle-icon">▼</span>
+                    </summary>
+                    <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem;">
+                        <div class="scorer-row"><span class="scorer-team">1e doelpunt:</span><span class="scorer-name">{tb['eerste_doelpunt_minuut']}e min</span></div>
+                        <div class="scorer-row"><span class="scorer-team">1e gele kaart:</span><span class="scorer-name">{tb['gele_kaart_minuut']}e min</span></div>
+                        <div class="scorer-row"><span class="scorer-team">1e rode kaart:</span><span class="scorer-name">{rode_str}</span></div>
+                    </div>
+                </details>
+        """
+
+        html_content += """
+            </div>
+        </div>
+        """
+
+    html_content += """
+    </div>
+
+    <script>
+        function toggleCalculator() {
+            const calc = document.getElementById('prediction-calculator');
+            calc.classList.toggle('collapsed');
+        }
+
+        function toggleOuSection() {
+            const btn = document.getElementById('ou-btn');
+            const container = document.getElementById('ou-fields-container');
+            container.classList.toggle('expanded');
+            if (container.classList.contains('expanded')) {
+                btn.classList.add('expanded');
+            } else {
+                btn.classList.remove('expanded');
+            }
+        }
+
+        function toggleExtraSection() {
+            const btn = document.getElementById('extra-btn');
+            const container = document.getElementById('extra-fields-container');
+            container.classList.toggle('expanded');
+            if (container.classList.contains('expanded')) {
+                btn.classList.add('expanded');
+            } else {
+                btn.classList.remove('expanded');
+            }
+        }
+
+        function toggleMotdStyle() {
+            const calc = document.getElementById('prediction-calculator');
+            const isMotd = document.getElementById('input-is-motd').checked;
+            const scorerWrapper = document.getElementById('scorer-rate-wrapper');
+            if (isMotd) {
+                calc.classList.add('is-motd-active');
+                if (scorerWrapper) scorerWrapper.style.display = 'flex';
+            } else {
+                calc.classList.remove('is-motd-active');
+                if (scorerWrapper) scorerWrapper.style.display = 'none';
+            }
+        }
+
+        function validateSum1X2() {
+            const homeVal = parseFloat(document.getElementById('input-win-home').value) || 0;
+            const drawVal = parseFloat(document.getElementById('input-win-draw').value) || 0;
+            const awayVal = parseFloat(document.getElementById('input-win-away').value) || 0;
+            const err = document.getElementById('calc-error-1x2');
+            if (homeVal + drawVal + awayVal === 0) {
+                err.style.display = 'block';
+                return false;
+            } else {
+                err.style.display = 'none';
+                return true;
+            }
+        }
+"""
+
+    html_content += _calculator_core_js()
+
+    html_content += """
+        function readNormalizedOu(underId, overId, lineId) {
+            let uRaw = document.getElementById(underId).value;
+            let oRaw = document.getElementById(overId).value;
+            if (uRaw === '' || oRaw === '') return null;
+            let u = parseFloat(uRaw) || 0, o = parseFloat(oRaw) || 0;
+            if (u + o <= 0) return null;
+            let line = parseFloat(document.getElementById(lineId).value);
+            let norm = normPower([u / 100.0, o / 100.0], 1.0);
+            let d = {}; d[line] = [norm[0], norm[1]]; return d;
+        }
+        function readNormalizedYes(yesId) {
+            let v = document.getElementById(yesId).value;
+            if (v === '') return null;
+            let y = parseFloat(v) || 0; if (y <= 0) return null;
+            let norm = normPower([y / 100.0, 1.0 - y / 100.0], 1.0);
+            return norm[0];
+        }
+
+        function calculatePrediction() {
+            if (!validateSum1X2()) return;
+            const btnText = document.getElementById('calc-btn-text');
+            const spinner = document.getElementById('calc-spinner');
+            const resultsWrapper = document.getElementById('results-wrapper');
+            btnText.style.display = 'none';
+            spinner.style.display = 'inline-block';
+            setTimeout(() => {
+                try {
+                    let homePct = parseFloat(document.getElementById('input-win-home').value) || 0;
+                    let drawPct = parseFloat(document.getElementById('input-win-draw').value) || 0;
+                    let awayPct = parseFloat(document.getElementById('input-win-away').value) || 0;
+                    let isMotd = document.getElementById('input-is-motd').checked;
+                    let scorerRateInput = document.getElementById('input-scorer-rate');
+                    let scorerRate = scorerRateInput ? parseFloat(scorerRateInput.value) : SCORER_HIT_RATE;
+                    if (isNaN(scorerRate)) scorerRate = SCORER_HIT_RATE;
+
+                    let inp = {
+                        home_pct: homePct, draw_pct: drawPct, away_pct: awayPct, is_motd: isMotd,
+                        team_ou_home: readNormalizedOu('ou-home-under', 'ou-home-over', 'ou-home-line'),
+                        team_ou_away: readNormalizedOu('ou-away-under', 'ou-away-over', 'ou-away-line'),
+                        ou_probs: readNormalizedOu('ou-match-under', 'ou-match-over', 'ou-match-line'),
+                        btts_prob: readNormalizedYes('input-btts'),
+                        clean_sheet_home_prob: readNormalizedYes('input-cs-home'),
+                        clean_sheet_away_prob: readNormalizedYes('input-cs-away'),
+                        scorer_rate: scorerRate
+                    };
+
+                    let res = predictMatch(inp);
+                    let lamH = res.lambda[0], lamA = res.lambda[1], rho = res.rho;
+                    let best = res.top_5[0];
+
+                    document.getElementById('result-score').innerText = res.uitslag;
+                    document.getElementById('result-ev').innerText = res.xpts.toFixed(2) + ' pts';
+                    document.getElementById('result-xg').innerText = 'xG Thuis: ' + lamH.toFixed(2) + ' | xG Uit: ' + lamA.toFixed(2) + ' (\u03c1: ' + rho.toFixed(2) + ')';
+
+                    let html = '<table class="top-predictions-table"><thead><tr><th>Rank</th><th>Uitslag</th><th>EV</th><th>Kans</th><th>P(&ge;1pt)</th><th>P(&ge;5pt)</th><th style="text-align: right;">&Delta;EV</th></tr></thead><tbody>';
+                    res.top_5.forEach((pred, index) => {
+                        let rank = index + 1;
+                        let rankClass = 'rank-' + rank;
+                        let badge = rank === 1 ? 'Hoofdadvies' : '#' + rank;
+                        let dv = pred.delta_ev;
+                        let dvStr = dv === 0 ? '0.00' : (dv > 0 ? '+' + dv.toFixed(2) : dv.toFixed(2));
+                        let dColor = dv > 0 ? 'var(--accent-green)' : (dv === 0 ? 'var(--text-secondary)' : 'var(--accent-red)');
+                        html += '<tr class="' + rankClass + '"><td><span class="badge-rank">' + badge + '</span></td>' +
+                            '<td><strong>' + pred.uitslag + '</strong></td>' +
+                            '<td>' + pred.ev.toFixed(2) + ' pts</td>' +
+                            '<td>' + pred.kans.toFixed(1) + '%</td>' +
+                            '<td>' + (pred.p_1pt * 100).toFixed(1) + '%</td>' +
+                            '<td>' + (pred.p_5pt * 100).toFixed(1) + '%</td>' +
+                            '<td style="text-align: right; font-weight: 600; color: ' + dColor + ';">' + dvStr + '</td></tr>';
+                    });
+                    html += '</tbody></table>';
+                    document.getElementById('calc-top-5-container').innerHTML = html;
+
+                    let tb = res.tie_breakers;
+                    let rodeStr = tb.rode_kaart_minuut != null ? (tb.rode_kaart_minuut + 'e min') : 'Geen (&gt; 90e)';
+                    document.getElementById('calc-tiebreakers').innerHTML =
+                        '<span class="detail-label" style="color: var(--accent-blue);">\u23f1\ufe0f Toernooi Tie-breakers (modelgebaseerd)</span>' +
+                        '<div class="scorer-row"><span class="scorer-team">1e doelpunt:</span><span class="scorer-name" style="color: var(--accent-blue);">' + tb.eerste_doelpunt_minuut + 'e min</span></div>' +
+                        '<div class="scorer-row"><span class="scorer-team">1e gele kaart:</span><span class="scorer-name" style="color: var(--accent-blue);">' + tb.gele_kaart_minuut + 'e min</span></div>' +
+                        '<div class="scorer-row"><span class="scorer-team">1e rode kaart:</span><span class="scorer-name" style="color: var(--accent-blue);">' + rodeStr + '</span></div>';
+
+                    const scorerDiv = document.getElementById('result-scorer-tips');
+                    if (isMotd) {
+                        document.getElementById('result-scorer-home').innerText = best.scorers[0] ? 'Spits (of penaltynemer)' : 'Geen score';
+                        document.getElementById('result-scorer-away').innerText = best.scorers[1] ? 'Spits (of penaltynemer)' : 'Geen score';
+                        document.getElementById('result-score-ev-val').innerText = best.score_ev.toFixed(2) + ' pts';
+                        document.getElementById('result-scorer-ev-val').innerText = best.scorer_ev.toFixed(2) + ' pts';
+                        document.getElementById('result-scorer-factor-val').innerText = scorerRate.toFixed(2);
+                        scorerDiv.style.display = 'flex';
+                    } else {
+                        scorerDiv.style.display = 'none';
+                    }
+
+                    spinner.style.display = 'none';
+                    btnText.style.display = 'inline-block';
+                    resultsWrapper.style.display = 'flex';
+                    resultsWrapper.offsetHeight;
+                    resultsWrapper.classList.add('visible');
+                } catch (e) {
+                    spinner.style.display = 'none';
+                    btnText.style.display = 'inline-block';
+                    console.error('Berekening mislukt:', e);
+                }
+            }, 400);
+        }
+    </script>
+    <footer style="margin-top: 40px; margin-bottom: 20px; font-size: 0.8rem; color: var(--text-secondary); text-align: center;">
+        <p>Berekend met de Voetbalpoules Polymarket Voorspeller. Data ververst dagelijks om 17:00 CEST.</p>
+    </footer>
+</body>
+</html>
+"""
+
+    try:
+        with open(bestandsnaam, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        print(f"{GREEN}✓ Mobiele website succesvol gegenereerd als {BOLD}{bestandsnaam}{RESET}!\n")
+    except Exception as e:
+        print(f"{RED}❌ Fout bij genereren HTML-bestand: {e}{RESET}\n")

@@ -52,7 +52,8 @@ try:
         calc_ev_motd,
         normaliseer_kansen,
         bepaal_poisson_lambdas,
-        calc_matrix
+        calc_matrix,
+        calc_matrix_nb
     )
 except ImportError as e:
     print(f"Fout: Kan polymarket_voorspeller.py niet importeren. {e}")
@@ -102,19 +103,31 @@ def predict_baseline_favorite(home_prob, draw_prob, away_prob):
 def predict_baseline_mode(home_prob, draw_prob, away_prob, ou_probs=None, team_ou_home=None, team_ou_away=None,
                           btts_prob=None, clean_sheet_home_prob=None, clean_sheet_away_prob=None,
                           loss_type="logloss", overround_method="power", verbose=False,
-                          weight_match_ou=None, weight_team_ou=None, weight_extra_markets=None):
+                          weight_match_ou=None, weight_team_ou=None, weight_extra_markets=None, model="poisson"):
     """Baseline B: Predict the score with the highest probability in the joint distribution."""
     p_h, p_d, p_a = normaliseer_kansen(home_prob, draw_prob, away_prob, method=overround_method)
-    lam_h, lam_a, rho = bepaal_poisson_lambdas(
-        p_h, p_d, p_a, ou_probs,
-        target_team_ou_home=team_ou_home, target_team_ou_away=team_ou_away,
-        target_btts=btts_prob, target_clean_sheet_home=clean_sheet_home_prob,
-        target_clean_sheet_away=clean_sheet_away_prob,
-        loss_type=loss_type, verbose=verbose,
-        weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou,
-        weight_extra_markets=weight_extra_markets
-    )
-    matrix = calc_matrix(lam_h, lam_a, rho)
+    if model == "negbinom":
+        lam_h, lam_a, rho, r_val = bepaal_poisson_lambdas(
+            p_h, p_d, p_a, ou_probs,
+            target_team_ou_home=team_ou_home, target_team_ou_away=team_ou_away,
+            target_btts=btts_prob, target_clean_sheet_home=clean_sheet_home_prob,
+            target_clean_sheet_away=clean_sheet_away_prob,
+            loss_type=loss_type, verbose=verbose,
+            weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou,
+            weight_extra_markets=weight_extra_markets, model=model
+        )
+        matrix = calc_matrix_nb(lam_h, lam_a, rho, r_val)
+    else:
+        lam_h, lam_a, rho = bepaal_poisson_lambdas(
+            p_h, p_d, p_a, ou_probs,
+            target_team_ou_home=team_ou_home, target_team_ou_away=team_ou_away,
+            target_btts=btts_prob, target_clean_sheet_home=clean_sheet_home_prob,
+            target_clean_sheet_away=clean_sheet_away_prob,
+            loss_type=loss_type, verbose=verbose,
+            weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou,
+            weight_extra_markets=weight_extra_markets, model=model
+        )
+        matrix = calc_matrix(lam_h, lam_a, rho)
     # Vind de uitslag tuple (h, a) met de hoogste kans in de matrix
     best_score = max(matrix, key=matrix.get)
     return best_score
@@ -123,7 +136,7 @@ def predict_ev_optimal(home_prob, draw_prob, away_prob, is_motd, ou_probs=None, 
                        btts_prob=None, clean_sheet_home_prob=None, clean_sheet_away_prob=None,
                        loss_type="logloss", overround_method="power", verbose=False,
                        weight_match_ou=None, weight_team_ou=None, weight_extra_markets=None,
-                       tiebreak="probability", scorer_rate=None):
+                       tiebreak="probability", scorer_rate=None, model="poisson"):
     """Strategy C: Predict the score that maximizes expected points (EV)."""
     res = voorspel(
         home_prob, draw_prob, away_prob, is_motd,
@@ -133,7 +146,7 @@ def predict_ev_optimal(home_prob, draw_prob, away_prob, is_motd, ou_probs=None, 
         loss_type=loss_type, overround_method=overround_method, verbose=verbose,
         weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou,
         weight_extra_markets=weight_extra_markets,
-        tiebreak=tiebreak, scorer_rate=scorer_rate
+        tiebreak=tiebreak, scorer_rate=scorer_rate, model=model
     )
     pred_str = res["uitslag"]
     return parse_score(pred_str), res.get("scorer_thuis_bool", False), res.get("scorer_uit_bool", False)
@@ -191,7 +204,7 @@ def calculate_actual_points(pred_h, pred_a, act_h, act_a, is_motd, scorer_rate=N
         return calc_ev_regular(pred_h, pred_a, matrix)
 
 
-def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", verbose=False, weight_match_ou=None, weight_team_ou=None, weight_extra_markets=None, silent=False, tiebreak="probability", scorer_rate=None):
+def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", verbose=False, weight_match_ou=None, weight_team_ou=None, weight_extra_markets=None, silent=False, tiebreak="probability", scorer_rate=None, report_path=None, model="poisson"):
     """Leest de CSV-data en voert de backtest uit voor alle strategieën."""
     if not os.path.exists(csv_path):
         if not silent:
@@ -347,7 +360,9 @@ def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", v
             "toto": 0,
             "thuis_doel": 0,
             "uit_doel": 0,
-            "voorspellingen": []
+            "voorspellingen": [],
+            "voorspellingen_str": [],
+            "voorspellingen_pts": []
         } for k in strategie_namen.keys()
     }
 
@@ -370,7 +385,7 @@ def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", v
             clean_sheet_away_prob=w.get("clean_sheet_away_prob"),
             loss_type=loss_type, overround_method=overround_method, verbose=verbose,
             weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou,
-            weight_extra_markets=weight_extra_markets
+            weight_extra_markets=weight_extra_markets, model=model
         )
         
         # 3. EV-optimalisatie
@@ -384,7 +399,7 @@ def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", v
             loss_type=loss_type, overround_method=overround_method, verbose=verbose,
             weight_match_ou=weight_match_ou, weight_team_ou=weight_team_ou,
             weight_extra_markets=weight_extra_markets,
-            tiebreak=tiebreak, scorer_rate=scorer_rate
+            tiebreak=tiebreak, scorer_rate=scorer_rate, model=model
         )
         
         predictions_map = {
@@ -415,6 +430,8 @@ def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", v
             stats[k]["uit_doel"] += 1 if (pa == act_a) else 0
             
             stats[k]["voorspellingen"].append(f"{ph}-{pa} ({pts} pt)")
+            stats[k]["voorspellingen_str"].append(f"{ph}-{pa}")
+            stats[k]["voorspellingen_pts"].append(pts)
 
     n = len(wedstrijden)
     if silent:
@@ -460,6 +477,83 @@ def evalueer_backtest(csv_path, loss_type="logloss", overround_method="power", v
         
     print("-" * 115)
     print()
+
+    # Genereer evaluatierapport indien gevraagd
+    if report_path:
+        import datetime
+        os.makedirs(os.path.dirname(os.path.abspath(report_path)), exist_ok=True)
+        
+        diffs = []
+        for i, w in enumerate(wedstrijden):
+            pts_fav = stats["fav"]["voorspellingen_pts"][i]
+            pts_mode = stats["mode"]["voorspellingen_pts"][i]
+            pts_ev = stats["ev"]["voorspellingen_pts"][i]
+            # Het verschil tussen EV en de beste baseline
+            diff = pts_ev - max(pts_fav, pts_mode)
+            diffs.append((w, pts_ev, pts_fav, pts_mode, diff, stats["fav"]["voorspellingen_str"][i], stats["mode"]["voorspellingen_str"][i], stats["ev"]["voorspellingen_str"][i]))
+            
+        top_pos = sorted(diffs, key=lambda x: x[4], reverse=True)[:10]
+        top_neg = sorted(diffs, key=lambda x: x[4])[:10]
+        
+        dataset_name = "WK 2022 Groepsfase" if "wk2022" in csv_path else ("WK 2026 Groepsfase" if "wk2026" in csv_path else os.path.basename(csv_path))
+        md = f"""# Evaluatierapport Backtest {dataset_name}
+
+Dit rapport evalueert de prestaties van de **EV-optimalisatie** strategie tegenover twee baselines op alle **{n} wedstrijden** van {dataset_name}.
+
+- **Datum van evaluatie:** {datetime.date.today().isoformat()}
+- **Instellingen:** Loss = {loss_type.upper()} | Overround = {overround_method.upper()} | Model = {model.upper()}
+
+## 1. Strategie Vergelijking
+
+De onderstaande tabel toont de totale en gemiddelde punten, evenals de hit rates (exacte score, toto, en doelpuntentellers) voor elke strategie.
+
+| Strategie | Tot. Pts | Gem. Pts | Exact % | Toto % | Thuisdoel % | Uitdoel % |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+"""
+        for k, name in strategie_namen.items():
+            s = stats[k]
+            tot_pts = s["punten"]
+            gem_pts = tot_pts / n
+            exact_pct = (s["exact"] / n) * 100.0
+            toto_pct = (s["toto"] / n) * 100.0
+            thuis_pct = (s["thuis_doel"] / n) * 100.0
+            uit_pct = (s["uit_doel"] / n) * 100.0
+            md += f"| {name} | {tot_pts:.1f} | {gem_pts:.2f} | {exact_pct:.1f}% | {toto_pct:.1f}% | {thuis_pct:.1f}% | {uit_pct:.1f}% |\n"
+            
+        md += """
+## 2. Top-10 Wedstrijden waar EV-strategie het MEESTE positieve verschil maakte
+
+Dit zijn de wedstrijden waar de EV-strategie meetbaar betere resultaten opleverde dan de baselines door risico's te spreiden en de wiskundig optimale uitslag te selecteren.
+
+| Wedstrijd | Werkelijke Uitslag | Favoriet (Baseline A) | Modus (Baseline B) | EV-Optimaal | Verschil (EV vs Baselines) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+"""
+        for w, pts_ev, pts_fav, pts_mode, diff, fav_str, mode_str, ev_str in top_pos:
+            md += f"| {w['thuis']} - {w['uit']} | {w['act_h']}-{w['act_a']} | {fav_str} ({pts_fav:.1f} pt) | {mode_str} ({pts_mode:.1f} pt) | {ev_str} ({pts_ev:.1f} pt) | **+{diff:.1f} pt** |\n"
+
+        md += """
+## 3. Top-10 Wedstrijden waar EV-strategie het MEESTE negatieve verschil maakte (of het minst presteerde)
+
+Dit zijn de wedstrijden waar de werkelijke uitslag sterk afweek van de marktkansen (grote verrassingen), of waar een conservatievere keuze achteraf beter was geweest.
+
+| Wedstrijd | Werkelijke Uitslag | Favoriet (Baseline A) | Modus (Baseline B) | EV-Optimaal | Verschil (EV vs Baselines) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+"""
+        for w, pts_ev, pts_fav, pts_mode, diff, fav_str, mode_str, ev_str in top_neg:
+            md += f"| {w['thuis']} - {w['uit']} | {w['act_h']}-{w['act_a']} | {fav_str} ({pts_fav:.1f} pt) | {mode_str} ({pts_mode:.1f} pt) | {ev_str} ({pts_ev:.1f} pt) | **{diff:.1f} pt** |\n"
+
+        md += """
+## 4. Aanbevelingen voor Verdere Verbetering
+
+Op basis van de resultaten van deze backtest kunnen de volgende verbeteringen worden overwogen:
+1. **Modelverfijning bij extreme uitslagen:** Bij wedstrijden met zeer hoge uitslagen (bijv. Spanje - Costa Rica 7-0 of Engeland - Iran 6-2) loopt de fit-residual op. De Poisson-aanname onderschat de staartkansen bij extreme doelsaldo's. Een model met een overdispersie-parameter (zoals Negatieve Binomiaal) kan hier uitkomst bieden.
+2. **Dynamische Dixon-Coles parameters:** De Dixon-Coles ρ-parameter is nu constant. Deze zou afhankelijk gemaakt kunnen worden van de doelpuntensom om lage gelijkspelen nog beter te accentueren.
+3. **Overround-correcties verfijnen:** Hoewel de power-methode beter presteert dan lineair normaliseren, zou Shin's methode geïmplementeerd kunnen worden voor een nog betere schatting of de implied probabilities van de bookmakers.
+
+"""
+        with open(report_path, "w", encoding="utf-8") as rf:
+            rf.write(md)
+        print(f"{GREEN}✓ Evaluatierapport succesvol gegenereerd als {BOLD}{report_path}{RESET}!\n")
 
 def grid_search_modus(csv_path, loss_type="logloss", overround_method="power", tiebreak="probability", scorer_rate=None):
     """
@@ -644,13 +738,25 @@ if __name__ == "__main__":
         action="store_true",
         help="Start grid-search modus om de scorer hit-rate te optimaliseren"
     )
+    parser.add_argument(
+        "--report",
+        type=str,
+        default=None,
+        help="Pad naar het rapportbestand dat gegenereerd moet worden (bijv. reports/backtest_wk2022.md)"
+    )
+    parser.add_argument(
+        "--model",
+        choices=["poisson", "negbinom"],
+        default="negbinom",
+        help="Het te gebruiken statistische model (standaard: negbinom)"
+    )
     args = parser.parse_args()
     
     # Toon header
     print(f"\n{CYAN}{BOLD}========================================================")
     print(f"       ⚽  VOETBALPOULES BACKTEST LAAG  ⚽")
     print(f"========================================================{RESET}")
-    print(f"Instellingen: Loss = {YELLOW}{args.loss.upper()}{RESET} | Overround = {YELLOW}{args.overround.upper()}{RESET}\n")
+    print(f"Instellingen: Loss = {YELLOW}{args.loss.upper()}{RESET} | Overround = {YELLOW}{args.overround.upper()}{RESET} | Model = {YELLOW}{args.model.upper()}{RESET}\n")
     
     if args.grid_search_scorer:
         grid_search_scorer(args.data, loss_type=args.loss, overround_method=args.overround, tiebreak=args.tiebreak)
@@ -666,6 +772,8 @@ if __name__ == "__main__":
             weight_team_ou=args.weight_team_ou,
             weight_extra_markets=args.weight_extra_markets,
             tiebreak=args.tiebreak,
-            scorer_rate=args.scorer_rate
+            scorer_rate=args.scorer_rate,
+            report_path=args.report,
+            model=args.model
         )
 

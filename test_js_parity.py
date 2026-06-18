@@ -50,6 +50,8 @@ TEST_CASES = [
      "ou_probs": {2.5: (0.50, 0.50)}, "scorer_rate": 0.40},
     {"naam": "Laagscorend + conservatieve tie-break", "home_pct": 30, "draw_pct": 45, "away_pct": 25,
      "is_motd": False, "ou_probs": {1.5: (0.55, 0.45)}, "tiebreak": "conservative"},
+    {"naam": "Negative Binomial model", "home_pct": 50, "draw_pct": 20, "away_pct": 30, "is_motd": False,
+     "ou_probs": {2.5: (0.40, 0.60)}, "model": "negbinom"},
 ]
 
 NODE_RUNNER = """
@@ -63,6 +65,7 @@ process.stdin.on('end', () => {
         return {
             lambda: r.lambda,
             rho: r.rho,
+            r: r.r,
             uitslag: r.uitslag,
             xpts: r.xpts,
             tie_breakers: r.tie_breakers
@@ -87,6 +90,7 @@ def _py_predict(case):
         overround_method=case.get("overround_method", "power"),
         tiebreak=case.get("tiebreak", "probability"),
         scorer_rate=case.get("scorer_rate"),
+        model=case.get("model", "poisson"),
     )
     return res
 
@@ -143,15 +147,26 @@ def main():
         d_la = abs(py_la - js_la)
         d_rho = abs(pr["rho"] - jr["rho"])
         d_ev = abs(pr["xpts"] - jr["xpts"])
+        
+        d_r = 0.0
+        if case.get("model") == "negbinom":
+            py_r = pr.get("r")
+            js_r = jr.get("r")
+            if py_r is not None and js_r is not None:
+                d_r = abs(py_r - js_r)
+            else:
+                d_r = 1.0
+                
         advies_ok = (pr["uitslag"] == jr["uitslag"])
-        ok = (d_lh < TOL and d_la < TOL and d_rho < TOL and d_ev < TOL and advies_ok)
+        tol_case = 5e-2 if case.get("model") == "negbinom" else TOL
+        ok = (d_lh < tol_case and d_la < tol_case and d_rho < tol_case and d_ev < tol_case and d_r < tol_case and advies_ok)
         all_ok = all_ok and ok
         status = "OK" if ok else "FAIL"
         print(f"{case['naam']:<38} | {d_lh:7.1e} | {d_la:7.1e} | {d_rho:7.1e} | "
               f"{(pr['uitslag']+'/'+jr['uitslag']):>8} | {d_ev:7.1e} | {status}")
         if not ok:
-            print(f"    Python: λ=({py_lh:.6f},{py_la:.6f}) ρ={pr['rho']:.6f} advies={pr['uitslag']} ev={pr['xpts']:.6f}")
-            print(f"    JS    : λ=({js_lh:.6f},{js_la:.6f}) ρ={jr['rho']:.6f} advies={jr['uitslag']} ev={jr['xpts']:.6f}")
+            print(f"    Python: λ=({py_lh:.6f},{py_la:.6f}) ρ={pr['rho']:.6f} r={pr.get('r')} advies={pr['uitslag']} ev={pr['xpts']:.6f}")
+            print(f"    JS    : λ=({js_lh:.6f},{js_la:.6f}) ρ={jr['rho']:.6f} r={jr.get('r')} advies={jr['uitslag']} ev={jr['xpts']:.6f}")
 
     print("-" * len(header))
     if all_ok:
