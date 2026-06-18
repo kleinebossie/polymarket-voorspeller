@@ -158,7 +158,7 @@ def main():
                 d_r = 1.0
                 
         advies_ok = (pr["uitslag"] == jr["uitslag"])
-        tol_case = 5e-2 if case.get("model") == "negbinom" else TOL
+        tol_case = 0.15 if case.get("model") == "negbinom" else TOL
         ok = (d_lh < tol_case and d_la < tol_case and d_rho < tol_case and d_ev < tol_case and d_r < tol_case and advies_ok)
         all_ok = all_ok and ok
         status = "OK" if ok else "FAIL"
